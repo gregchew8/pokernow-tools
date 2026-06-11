@@ -1,0 +1,20 @@
+# Avoid committing private player payment details
+payment_info.csv
+payment_info_*.csv
+gg.csv
+
+# Avoid committing browser login cookies and session tokens
+chrome-profile/
+auth.json
+
+# Avoid committing ledger downloads and outputs
+data/
+output/
+last_created_games.json
+ledger_*.csv
+
+# Python caches and system files
+__pycache__/
+*.pyc
+.DS_Store
+*.zip
