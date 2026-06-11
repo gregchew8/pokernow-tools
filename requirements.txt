@@ -1,3 +1,5 @@
 requests
 networkx
 ortools
+playwright
+pandas

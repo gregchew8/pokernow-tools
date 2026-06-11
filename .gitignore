@@ -10,7 +10,6 @@ auth.json
 # Avoid committing ledger downloads and outputs
 data/
 output/
-last_created_games.json
 ledger_*.csv
 
 # Python caches and system files

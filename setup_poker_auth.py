@@ -57,22 +57,26 @@ from playwright.sync_api import Playwright, sync_playwright, expect
 
 
 def copy_to_clipboard(html: str, text: str) -> None:
-    # Convert html and text to hex bytes to avoid AppleScript escaping issues with quotation marks or newlines
-    html_hex = html.encode('utf-8').hex()
-    text_hex = text.encode('utf-8').hex()
-    
-    # AppleScript to set both HTML data (for email/rich text) and plain text (for terminals/chat)
-    applescript = f'''
-    set the clipboard to {{«class HTML»:«data HTML{html_hex}», «class utf8»:«data utf8{text_hex}»}}
-    '''
-    subprocess.run(['osascript', '-e', applescript], check=True)
+    try:
+        # Convert html and text to hex bytes to avoid AppleScript escaping issues with quotation marks or newlines
+        html_hex = html.encode('utf-8').hex()
+        text_hex = text.encode('utf-8').hex()
+        
+        # AppleScript to set both HTML data (for email/rich text) and plain text (for terminals/chat)
+        applescript = f'''
+        set the clipboard to {{«class HTML»:«data HTML{html_hex}», «class utf8»:«data utf8{text_hex}»}}
+        '''
+        subprocess.run(['osascript', '-e', applescript], check=True)
+    except Exception as e:
+        print(f"Warning: Could not copy to clipboard (this is expected on non-macOS/CI environments): {e}")
 
 
-def run(playwright: Playwright, tables_to_create: list) -> None:
+
+def run(playwright: Playwright, tables_to_create: list, headless: bool = False) -> None:
     # Use persistent context to load our saved login session
     context = playwright.chromium.launch_persistent_context(
         user_data_dir="./chrome-profile",
-        headless=False,
+        headless=headless,
         args=["--disable-blink-features=AutomationControlled"]
     )
     
@@ -87,9 +91,16 @@ def run(playwright: Playwright, tables_to_create: list) -> None:
         "plo8": "plo8"
     }
     
-    for idx, (game_type, table_num) in enumerate(tables_to_create):
+    for idx, table_info in enumerate(tables_to_create):
+        # Support both 2-tuples and 4-tuples for backward compatibility
+        if len(table_info) == 4:
+            game_type, table_num, sb, bb = table_info
+        else:
+            game_type, table_num = table_info
+            sb, bb = "0.25", "0.50"
+            
         variant_value = variant_map[game_type]
-        print(f"Creating {game_type.upper()} table {table_num} ({idx+1} of {total_tables})...")
+        print(f"Creating {game_type.upper()} table {table_num} with blinds {sb}/{bb} ({idx+1} of {total_tables})...")
         
         # Reuse the default open tab for the first table, open new tabs for others
         if idx == 0 and context.pages:
@@ -118,9 +129,9 @@ def run(playwright: Playwright, tables_to_create: list) -> None:
         
         # SB and BB settings
         page.get_by_role("textbox", name="SB").dblclick()
-        page.get_by_role("textbox", name="SB").fill("0.025")
+        page.get_by_role("textbox", name="SB").fill(sb)
         page.get_by_role("textbox", name="SB").press("Tab")
-        page.get_by_role("textbox", name="BB").fill("0.050")
+        page.get_by_role("textbox", name="BB").fill(bb)
         
         page.get_by_role("button", name="Ask Players").click()
         page.get_by_role("button", name="Yes").nth(3).click()
@@ -213,36 +224,79 @@ if __name__ == "__main__":
     allowed_types = ["nlh", "plo", "plo8"]
     
     args = sys.argv[1:]
-    if len(args) == 0:
-        # Default: create 1 NLH table
-        tables_to_create.append(("nlh", 1))
+    
+    # Check for headless flag
+    headless = False
+    if "--headless" in args:
+        headless = True
+        args.remove("--headless")
+        
+    # Check for JSON config flag
+    if "--config" in args:
+        idx = args.index("--config")
+        config_str = args[idx + 1]
+        args.pop(idx + 1)
+        args.pop(idx)
+        
+        try:
+            config_data = json.loads(config_str)
+            for idx, t in enumerate(config_data, 1):
+                gtype = t.get("type", "nlh").lower()
+                if gtype not in allowed_types:
+                    gtype = "nlh"
+                current_type_count = len([x for x in tables_to_create if x[0] == gtype])
+                tables_to_create.append((gtype, current_type_count + 1, t.get("sb", "0.25"), t.get("bb", "0.50")))
+        except Exception as e:
+            print(f"Error parsing --config JSON: {e}")
+            sys.exit(1)
     else:
-        # Check if the first argument is just a single number (e.g. python3 setup_poker_auth.py 3)
-        if len(args) == 1 and args[0].isdigit():
-            num = int(args[0])
-            for idx in range(num):
-                tables_to_create.append(("nlh", idx + 1))
+        # Check for custom SB/BB flags for backward compatibility/quick overrides
+        sb = "0.25"
+        bb = "0.50"
+        if "--sb" in args:
+            idx = args.index("--sb")
+            if idx + 1 < len(args):
+                sb = args[idx + 1]
+                args.pop(idx + 1)
+            args.pop(idx)
+            
+        if "--bb" in args:
+            idx = args.index("--bb")
+            if idx + 1 < len(args):
+                bb = args[idx + 1]
+                args.pop(idx + 1)
+            args.pop(idx)
+            
+        if len(args) == 0:
+            # Default: create 1 NLH table
+            tables_to_create.append(("nlh", 1, sb, bb))
         else:
-            # Parse pairs: [game_type] [count] [game_type] [count] ...
-            i = 0
-            while i < len(args):
-                arg = args[i].lower()
-                if arg in allowed_types:
-                    count = 1
-                    # Check if next argument is a count
-                    if i + 1 < len(args) and args[i+1].isdigit():
-                        count = int(args[i+1])
-                        i += 2
+            # Check if the first argument is just a single number (e.g. python3 setup_poker_auth.py 3)
+            if len(args) == 1 and args[0].isdigit():
+                num = int(args[0])
+                for idx in range(num):
+                    tables_to_create.append(("nlh", idx + 1, sb, bb))
+            else:
+                # Parse pairs: [game_type] [count] [game_type] [count] ...
+                i = 0
+                while i < len(args):
+                    arg = args[i].lower()
+                    if arg in allowed_types:
+                        count = 1
+                        # Check if next argument is a count
+                        if i + 1 < len(args) and args[i+1].isdigit():
+                            count = int(args[i+1])
+                            i += 2
+                        else:
+                            i += 1
+                        
+                        for _ in range(count):
+                            current_type_count = len([t for t in tables_to_create if t[0] == arg])
+                            tables_to_create.append((arg, current_type_count + 1, sb, bb))
                     else:
-                        i += 1
-                    
-                    for _ in range(count):
-                        current_type_count = len([t for t in tables_to_create if t[0] == arg])
-                        tables_to_create.append((arg, current_type_count + 1))
-                else:
-                    print(f"Error: Unknown argument '{arg}'")
-                    print("Usage: python3 setup_poker_auth.py [nlh|plo|plo8] [count] [nlh|plo|plo8] [count] ...")
-                    sys.exit(1)
-                    
+                        print(f"Error: Unknown argument '{arg}'")
+                        print("Usage: python3 setup_poker_auth.py [--headless] [--config JSON_STRING] [--sb SB] [--bb BB] [nlh|plo|plo8] [count] [nlh|plo|plo8] [count] ...")
+                        sys.exit(1)
+                        
     with sync_playwright() as playwright:
-        run(playwright, tables_to_create)
+        run(playwright, tables_to_create, headless=headless)
