@@ -115,12 +115,17 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         page.get_by_role("textbox", name="Your Nickname").fill("Rerun")
         page.get_by_role("button", name="Create Game").click()
         
-        # Wait for the room to load
-        page.wait_for_timeout(4000)
+        # Wait for the room to load (expect /games/ in the URL)
+        try:
+            page.wait_for_url("**/games/*", timeout=20000)
+            page.wait_for_timeout(1000) # Small breathing room for UI hydration
+        except Exception as e:
+            print(f"Warning: URL did not change to games path, currently at {page.url}. Continuing anyway...")
+            page.wait_for_timeout(4000)
         
-        # Options & Configurations
-        page.get_by_role("button", name=" Options").click()
-        page.get_by_role("button", name=" Game Configurations").click()
+        # Options & Configurations (use exact=False to avoid icon rendering/matching issues in CI)
+        page.get_by_role("button", name="Options", exact=False).click()
+        page.get_by_role("button", name="Game Configurations", exact=False).click()
         page.get_by_role("button", name="Yes").nth(1).click()
         
         # Wait for configurations dialog, then select the Poker Variant
