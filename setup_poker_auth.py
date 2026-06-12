@@ -77,7 +77,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
     context = playwright.chromium.launch_persistent_context(
         user_data_dir="./chrome-profile",
         headless=headless,
-        args=["--disable-blink-features=AutomationControlled"]
+        args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
     )
     
     urls = []
