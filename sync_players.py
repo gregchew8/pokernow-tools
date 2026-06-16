@@ -6,7 +6,19 @@ import requests
 CSV_FILE = "payment_info.csv"
 ENV_VAR = "GOOGLE_SHEET_CSV_URL"
 
+def load_env():
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
 def main():
+    load_env()
     url = os.environ.get(ENV_VAR)
     if not url:
         # Check if payment_info.csv already exists locally

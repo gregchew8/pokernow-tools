@@ -74,7 +74,40 @@ def post_to_discord(subject, html_content):
         print(f"Error posting settlement to Discord: {e}")
         return False
 
+def load_env():
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
+def sync_to_google_drive():
+    drive_path = "/Users/gregchew/Library/CloudStorage/GoogleDrive-gregchew@gmail.com/My Drive/pokernow"
+    if not os.path.exists(drive_path):
+        print(f"Skipping Google Drive backup: path {drive_path} does not exist.")
+        return
+    
+    print("\nBacking up files to Google Drive...")
+    src = "/Users/gregchew/pokernow/"
+    cmd = [
+        "rsync", "-av", "--delete",
+        "--exclude=chrome-profile",
+        "--exclude=.git",
+        src,
+        drive_path + "/"
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("Backup to Google Drive completed successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to back up files to Google Drive: {e}")
+
 def main():
+    load_env()
     # 1. Sync player mapping first
     print("Step 1: Syncing player database...")
     subprocess.run([sys.executable, "sync_players.py"], check=True)
@@ -129,6 +162,30 @@ def main():
     # 4. Email/Discord the report
     send_email(subject, report_html)
     post_to_discord(subject, report_html)
+    
+    # Automatically backup outputs to Google Drive
+    sync_to_google_drive()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        import datetime
+        error_msg = traceback.format_exc()
+        print(error_msg, file=sys.stderr)
+        
+        load_env()
+        sync_to_google_drive()
+        
+        admin_email = os.environ.get("EMAIL_SENDER")
+        if admin_email:
+            subject = f"ALERT: Poker Settlement Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
+            html_content = f"<h3>Poker Settlement Failed</h3><p>The morning settlement task encountered an error:</p><pre style='color: red; padding: 10px; background: #f9f9f9; border: 1px solid #ccc;'>{error_msg}</pre>"
+            
+            original_receiver = os.environ.get("EMAIL_RECEIVER")
+            os.environ["EMAIL_RECEIVER"] = admin_email
+            send_email(subject, html_content)
+            if original_receiver:
+                os.environ["EMAIL_RECEIVER"] = original_receiver
+        sys.exit(1)

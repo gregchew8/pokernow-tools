@@ -62,8 +62,41 @@ def post_to_discord(subject, text_content):
         print(f"Error posting to Discord: {e}")
         return False
 
+def load_env():
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
+def sync_to_google_drive():
+    drive_path = "/Users/gregchew/Library/CloudStorage/GoogleDrive-gregchew@gmail.com/My Drive/pokernow"
+    if not os.path.exists(drive_path):
+        print(f"Skipping Google Drive backup: path {drive_path} does not exist.")
+        return
+    
+    print("\nBacking up files to Google Drive...")
+    src = "/Users/gregchew/pokernow/"
+    cmd = [
+        "rsync", "-av", "--delete",
+        "--exclude=chrome-profile",
+        "--exclude=.git",
+        src,
+        drive_path + "/"
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("Backup to Google Drive completed successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to back up files to Google Drive: {e}")
+
 def main():
     import datetime
+    load_env()
     
     args = sys.argv[1:]
     
@@ -95,34 +128,47 @@ def main():
             print(f"Warning: {schedule_file} not found. Defaulting to 'nlh 2'.")
             args = ["nlh", "2", "--sb", "0.25", "--bb", "0.50"]
 
-    # Pass all args (like game types/counts) to setup_poker_auth.py, adding --headless
-    setup_cmd = [sys.executable, "setup_poker_auth.py", "--headless"] + args
+    # Pass all args (like game types/counts) to setup_poker_auth.py (headed by default to bypass Cloudflare bot check)
+    setup_cmd = [sys.executable, "setup_poker_auth.py"] + args
     
     print(f"Running table creation: {' '.join(setup_cmd)}")
-    result = subprocess.run(setup_cmd, capture_output=True, text=True)
-    print(result.stdout)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
+    result = subprocess.run(setup_cmd)
 
     if result.returncode != 0:
         print("Table creation failed. Aborting announcement.")
         sys.exit(result.returncode)
 
     # Read the created games JSON
-    if not os.path.exists("last_created_games.json"):
-        print("Error: last_created_games.json not found.")
+    import time
+    import errno
+    game_data = None
+    for attempt in range(10):
+        try:
+            if os.path.exists("last_created_games.json"):
+                with open("last_created_games.json", "r") as f:
+                    game_data = f.read()
+                break
+        except OSError as e:
+            if e.errno in (errno.EDEADLK, errno.EAGAIN) and attempt < 9:
+                print(f"Google Drive sync lock detected, retrying read from last_created_games.json ({attempt + 1}/10)...")
+                time.sleep(1.0)
+            else:
+                raise
+
+    if not game_data:
+        print("Error: last_created_games.json not found or could not be read.")
         sys.exit(1)
 
-    with open("last_created_games.json", "r") as f:
-        game_data = f.read()
-        print("Created games details:")
-        print(game_data)
-        game_history = json.loads(game_data)
+    print("Created games details:")
+    print(game_data)
+    game_history = json.loads(game_data)
 
-    date_str = game_history.get("date", "")
     tables = game_history.get("tables", [])
-    
-    subject = f"Poker Night Tables for {date_str}"
+    today = datetime.datetime.now()
+    day = today.day
+    month_abbr = today.strftime("%b")
+    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    subject = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
     
     # Construct Email/Discord content
     text_lines = [subject, "Here are the table links for tonight's games:", ""]
@@ -132,15 +178,22 @@ def main():
         game_type = t.get("game_type", "").upper()
         table_num = t.get("table_num", 1)
         game_id = t.get("game_id", "")
+        sb = t.get("sb")
+        bb = t.get("bb")
+        stakes_suffix = f" {sb}/{bb}" if sb and bb else ""
         url = f"https://www.pokernow.club/games/{game_id}"
         
-        text_lines.append(f"- {game_type} Table {table_num}: {url}")
-        html_lines.append(f"<li><strong>{game_type} Table {table_num}:</strong> <a href=\"{url}\">{url}</a></li>")
+        text_lines.append(f"- {game_type}{stakes_suffix} Table {table_num}: {url}")
+        html_lines.append(f"<li><strong><a href=\"{url}\">{game_type}{stakes_suffix} Table {table_num}</a></strong></li>")
         
+    note_text = "The first person sitting at the table will be the first admin of the table for the night. Please shuffle the seats and start the tables when the players are ready to start"
+    
+    text_lines.append("")
+    text_lines.append(note_text)
     text_lines.append("")
     text_lines.append("Good luck at the tables!")
     
-    html_lines.append("</ul><p>Good luck at the tables!</p>")
+    html_lines.append(f"</ul><p style=\"color: #555; font-style: italic;\">{note_text}</p><p>Good luck at the tables!</p>")
     
     text_content = "\n".join(text_lines)
     html_content = "\n".join(html_lines)
@@ -151,5 +204,34 @@ def main():
     # Post to Discord
     post_to_discord(subject, text_content)
 
+    # Sync to Google Calendar
+    print("\nStep 4: Syncing to Google Calendar...")
+    subprocess.run([sys.executable, "update_calendar.py"])
+    
+    # Automatically backup outputs to Google Drive
+    sync_to_google_drive()
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        import datetime
+        error_msg = traceback.format_exc()
+        print(error_msg, file=sys.stderr)
+        
+        load_env()
+        sync_to_google_drive()
+        
+        admin_email = os.environ.get("EMAIL_SENDER")
+        if admin_email:
+            subject = f"ALERT: Poker Game Announcer Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
+            html_content = f"<h3>Poker Game Announcer Failed</h3><p>The scheduled background task encountered an error:</p><pre style='color: red; padding: 10px; background: #f9f9f9; border: 1px solid #ccc;'>{error_msg}</pre>"
+            text_content = f"Poker Game Announcer Failed\n\nError details:\n{error_msg}"
+            
+            original_receiver = os.environ.get("EMAIL_RECEIVER")
+            os.environ["EMAIL_RECEIVER"] = admin_email
+            send_email(subject, html_content, text_content)
+            if original_receiver:
+                os.environ["EMAIL_RECEIVER"] = original_receiver
+        sys.exit(1)

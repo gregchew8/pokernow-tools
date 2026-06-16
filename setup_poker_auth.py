@@ -53,6 +53,11 @@ import sys
 import json
 import datetime
 import subprocess
+import os
+
+# Set custom Playwright browsers path to persist Chromium executable outside macOS Library cache sweeps
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/Users/gregchew/pokernow/playwright-browsers"
+
 from playwright.sync_api import Playwright, sync_playwright, expect
 
 
@@ -74,9 +79,11 @@ def copy_to_clipboard(html: str, text: str) -> None:
 
 def run(playwright: Playwright, tables_to_create: list, headless: bool = False) -> None:
     # Use persistent context to load our saved login session
+    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     context = playwright.chromium.launch_persistent_context(
         user_data_dir="./chrome-profile",
         headless=headless,
+        user_agent=user_agent,
         args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
     )
     
@@ -108,7 +115,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         else:
             page = context.new_page()
             
-        page.goto("https://www.pokernow.com/start-game")
+        page.goto("https://www.pokernow.com/start-game", timeout=60000, wait_until="domcontentloaded")
         
         # Enter Nickname (avoid pressing Enter to prevent premature submit)
         page.get_by_role("textbox", name="Your Nickname").click()
@@ -147,8 +154,8 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         page.get_by_role("textbox").nth(4).press("Tab")
         page.get_by_role("textbox").nth(5).fill("6")
         
-        # Choose/Update Game
-        page.locator("div:nth-child(17) > .col.col-2 > .choose-buttons > button").first.click()
+        # Showdown Presentation Time to FAST (3S)
+        page.get_by_role("button", name="FAST (3S)", exact=False).click()
         page.get_by_role("button", name="Update Game").click()
         page.get_by_role("button", name="Ok").click()
         page.get_by_role("button", name="« Back").click()
@@ -168,13 +175,19 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
     
     # Format the plain text representation
     today = datetime.datetime.now()
-    day_str = today.strftime("%d").lstrip('0')
-    subject_line = f"Cash game tonight, ({today.strftime('%B')} {day_str}, 7pm)"
+    day = today.day
+    month_abbr = today.strftime("%b")
+    suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    subject_line = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
     
     formatted_lines = [f"Subject: {subject_line}", ""]
     html_links = [f"<b>Subject: {subject_line}</b>", ""]
-    for idx, ((game_type, table_num), url) in enumerate(zip(tables_to_create, urls), 1):
-        prefix = game_type.upper()
+    for idx, (t, url) in enumerate(zip(tables_to_create, urls), 1):
+        game_type = t[0]
+        sb = t[2] if len(t) == 4 else "0.25"
+        bb = t[3] if len(t) == 4 else "0.50"
+        stakes = f" {sb}/{bb}"
+        prefix = f"{game_type.upper()}{stakes}"
         formatted_lines.append(f"{prefix} - Table {idx} <{url}>")
         html_links.append(f'<a href="{url}">{prefix} - Table {idx}</a>')
         
@@ -199,14 +212,23 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         "date": today.strftime("%Y-%m-%d"),
         "description": today.strftime("%m%d%y"),
         "game_ids": [url.split("/games/")[-1] for url in urls],
-        "tables": [{"game_type": t[0], "table_num": idx, "game_id": url.split("/games/")[-1]} for idx, (t, url) in enumerate(zip(tables_to_create, urls), 1)]
+        "tables": [{"game_type": t[0], "table_num": idx, "game_id": url.split("/games/")[-1], "sb": t[2] if len(t) == 4 else "0.25", "bb": t[3] if len(t) == 4 else "0.50"} for idx, (t, url) in enumerate(zip(tables_to_create, urls), 1)]
     }
-    try:
-        with open("last_created_games.json", "w") as f:
-            json.dump(game_history, f, indent=4)
-        print("Saved game details to 'last_created_games.json' for settlement automation.")
-    except Exception as e:
-        print(f"Warning: Could not save last_created_games.json: {e}")
+    import time
+    import errno
+    for attempt in range(10):
+        try:
+            with open("last_created_games.json", "w") as f:
+                json.dump(game_history, f, indent=4)
+            print("Saved game details to 'last_created_games.json' for settlement automation.")
+            break
+        except OSError as e:
+            if e.errno in (errno.EDEADLK, errno.EAGAIN) and attempt < 9:
+                print(f"Google Drive sync lock detected, retrying write to last_created_games.json ({attempt + 1}/10)...")
+                time.sleep(1.0)
+            else:
+                print(f"Warning: Could not save last_created_games.json: {e}")
+                break
         
     # Print Console Commands & Tokens to claim admin ownership on any other browser
     print("\n" + "="*60)
@@ -216,7 +238,8 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
     print("            and paste the clean Token when prompted.")
     print(" Option B:  Paste the console Command in DevTools (F12) Console.")
     print("="*60)
-    for idx, ((game_type, table_num), url, token) in enumerate(zip(tables_to_create, urls, admin_tokens), 1):
+    for idx, (t, url, token) in enumerate(zip(tables_to_create, urls, admin_tokens), 1):
+        game_type = t[0]
         if token:
             print(f" Table {idx} ({game_type.upper()} Table {idx}):")
             print(f"   Token:   {token}")

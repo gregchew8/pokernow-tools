@@ -1,4 +1,9 @@
 import sys
+import os
+
+# Set custom Playwright browsers path to persist Chromium executable outside macOS Library cache sweeps
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/Users/gregchew/pokernow/playwright-browsers"
+
 from playwright.sync_api import sync_playwright
 
 

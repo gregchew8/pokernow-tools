@@ -17,3 +17,14 @@ __pycache__/
 *.pyc
 .DS_Store
 *.zip
+
+# Private configurations and credentials
+.env
+calendar_credentials.json
+
+# Local state
+last_created_games.json
+
+# Local Playwright binaries
+playwright-browsers/
+
