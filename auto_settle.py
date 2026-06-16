@@ -143,16 +143,14 @@ def main():
         print(result.stderr, file=sys.stderr)
 
     if result.returncode != 0:
-        print("Settlement calculation failed. Aborting announcement.")
-        sys.exit(result.returncode)
+        raise RuntimeError(f"Settlement calculation failed. pokernow_settlement.py exited with code {result.returncode}.")
 
     # 3. Read generated HTML report
     report_file = f"./output/settlement_{description}.html"
     if not os.path.exists(report_file):
         report_file = "./output/settlement.html"
         if not os.path.exists(report_file):
-            print(f"Error: Settlement report file not found in ./output/")
-            sys.exit(1)
+            raise FileNotFoundError("Error: Settlement report file not found in ./output/")
 
     with open(report_file, "r", encoding="utf-8") as f:
         report_html = f.read()

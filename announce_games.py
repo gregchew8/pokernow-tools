@@ -135,8 +135,7 @@ def main():
     result = subprocess.run(setup_cmd)
 
     if result.returncode != 0:
-        print("Table creation failed. Aborting announcement.")
-        sys.exit(result.returncode)
+        raise RuntimeError(f"Table creation failed. setup_poker_auth.py exited with code {result.returncode}.")
 
     # Read the created games JSON
     import time
@@ -156,8 +155,7 @@ def main():
                 raise
 
     if not game_data:
-        print("Error: last_created_games.json not found or could not be read.")
-        sys.exit(1)
+        raise FileNotFoundError("Error: last_created_games.json not found or could not be read.")
 
     print("Created games details:")
     print(game_data)
