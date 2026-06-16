@@ -2,7 +2,7 @@
 
 This repository contains a suite of Python scripts to automate setting up game rooms on Poker Now, announcing tables to Google Calendar/Groups/Discord, and calculating settlements from game cashout ledgers.
 
-All active automation runs locally out of your SSD folder `/Users/gregchew/pokernow`, and replicates changes to Google Drive via a slave replica sync.
+All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), and replicates changes to Google Drive via a slave replica sync.
 
 ---
 
@@ -12,7 +12,7 @@ All active automation runs locally out of your SSD folder `/Users/gregchew/poker
    - Logs into your Poker Now owner lobby.
    - Automates the creation and configuration (blinds, variant types, timers, stakes) of multiple cash game tables in parallel.
    - Copies ready-to-share links and commands to the clipboard along with an email subject line.
-   - Persists Playwright browser binaries in `/Users/gregchew/pokernow/playwright-browsers` to protect against macOS cache cleanups.
+   - Persists Playwright browser binaries in `./playwright-browsers` to protect against macOS cache cleanups.
 2. **Automated Scheduler** (`setup_local_scheduler.py`)
    - Configures macOS `launchd` CalendarIntervals to run game setup and settlement calculations automatically.
 3. **Game Announcer** (`announce_games.py` & `update_calendar.py`)
@@ -37,7 +37,7 @@ pip install playwright pandas requests networkx ortools
 ### 2. Persistent Playwright Browser
 Set custom environment path and install Playwright Chromium directly into the workspace:
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=/Users/gregchew/pokernow/playwright-browsers python3 -m playwright install chromium
+PLAYWRIGHT_BROWSERS_PATH=./playwright-browsers python3 -m playwright install chromium
 ```
 
 ### 3. Login Setup (First Time Only)
