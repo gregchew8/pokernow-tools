@@ -270,6 +270,8 @@ if __name__ == "__main__":
             config_data = json.loads(config_str)
             for idx, t in enumerate(config_data, 1):
                 gtype = t.get("type", "nlh").lower()
+                if gtype == "pl8":
+                    gtype = "plo8"
                 if gtype not in allowed_types:
                     gtype = "nlh"
                 current_type_count = len([x for x in tables_to_create if x[0] == gtype])
