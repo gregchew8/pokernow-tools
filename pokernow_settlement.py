@@ -144,8 +144,8 @@ def read_cashouts(path, read_all_csv=True):
             mapped_row = dict(zip(headers, row))
             venmo_mapping[mapped_row[POKERNOW_NICKNAME_COL]] = mapped_row[PAYMENT_COL]
 
-    # Convert mapping key to lower cases.
-    venmo_mapping_lower = {k.lower(): v for k, v in venmo_mapping.items()}
+    # Convert mapping key to lowercase and strip whitespace from both key and Venmo ID.
+    venmo_mapping_lower = {k.strip().lower(): v.strip() for k, v in venmo_mapping.items() if k}
 
     # Function to process each file
     def process_file(filename):
@@ -156,8 +156,8 @@ def read_cashouts(path, read_all_csv=True):
                 mapped_row = dict(zip(headers, row))
                 try:
                     cashout = int(mapped_row['net'].replace('.', ''))
-                    # Lookup PN/ClubGG Alias to get the correct Venmo information. Using lower case to lookup.
-                    player_nickname = mapped_row['player_nickname'].lower()
+                    # Lookup PN/ClubGG Alias to get the correct Venmo information. Using stripped lower case to lookup.
+                    player_nickname = mapped_row['player_nickname'].strip().lower()
                     if player_nickname == "" or player_nickname not in venmo_mapping_lower:
                         print(f"\nError: Player with nickname '{player_nickname}' not found in Payment mapping or nickname is empty.\n")
                         sys.exit(1)  # Terminate program
