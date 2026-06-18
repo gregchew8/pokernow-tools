@@ -132,10 +132,14 @@ def main():
     setup_cmd = [sys.executable, "setup_poker_auth.py"] + args
     
     print(f"Running table creation: {' '.join(setup_cmd)}")
-    result = subprocess.run(setup_cmd)
+    result = subprocess.run(setup_cmd, capture_output=True, text=True)
+    print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Table creation failed. setup_poker_auth.py exited with code {result.returncode}.")
+        error_details = result.stderr.strip() if result.stderr else result.stdout.strip()
+        raise RuntimeError(f"Table creation failed. setup_poker_auth.py exited with code {result.returncode}.\n\nSubprocess Output:\n{error_details}")
 
     # Read the created games JSON
     import time

@@ -143,7 +143,8 @@ def main():
         print(result.stderr, file=sys.stderr)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Settlement calculation failed. pokernow_settlement.py exited with code {result.returncode}.")
+        error_details = result.stderr.strip() if result.stderr else result.stdout.strip()
+        raise RuntimeError(f"Settlement calculation failed. pokernow_settlement.py exited with code {result.returncode}.\n\nSubprocess Output:\n{error_details}")
 
     # 3. Read generated HTML report
     report_file = f"./output/settlement_{description}.html"
