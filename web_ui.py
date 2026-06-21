@@ -5,6 +5,7 @@ import json
 import subprocess
 import threading
 import time
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 
@@ -68,6 +69,128 @@ def get_last_log_lines(filepath):
     except Exception as e:
         return f"Error reading log file: {e}"
 
+def triage_logs(a_out, a_err, s_out, s_err):
+    # Default state: No runs or unknown state
+    diagnosis = {
+        "status": "info",
+        "title": "Awaiting System Run",
+        "explanation": "No active tasks have failed or succeeded yet in this monitoring session.",
+        "steps": ["Click 'Start Table Setup' or 'Run Manual Settlement' to begin."]
+    }
+
+    # Combined stderr and stdout for easier checking
+    a_combined = (a_out + "\n" + a_err).lower()
+    s_combined = (s_out + "\n" + s_err).lower()
+
+    # Look for errors first in Settlement (since it is the most recent task if both run)
+    # Check for missing player nickname in payment mapping
+    nickname_match = re.search(r"player with nickname '([^']+)' not found", s_combined)
+    if nickname_match:
+        nickname = nickname_match.group(1)
+        return {
+            "status": "error",
+            "title": "Missing Player Payment Mapping",
+            "explanation": f"The settlement engine failed because a player with the nickname '{nickname}' is not registered in your player database.",
+            "steps": [
+                f"Open your player database Google Sheet.",
+                f"Add a new row mapping nickname '{nickname}' to their Venmo handle.",
+                "Wait 5 seconds for Google Drive sync, then click 'Run Manual Settlement' again."
+            ]
+        }
+
+    # Check for SMTP auth errors
+    if "smtpauthenticationerror" in a_combined or "smtpauthenticationerror" in s_combined:
+        return {
+            "status": "error",
+            "title": "Email Authentication (SMTP) Failed",
+            "explanation": "The email notification script could not log into your Gmail account. This is usually due to an incorrect or revoked Google App Password.",
+            "steps": [
+                "Verify that EMAIL_SENDER is set correctly in your .env file.",
+                "Generate a new Google App Password from your Google Account security settings.",
+                "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password (without spaces)."
+            ]
+        }
+
+    # Check for Playwright browser missing
+    if "executable doesn't exist" in a_combined or "looks like playwright was just installed" in a_combined:
+        return {
+            "status": "error",
+            "title": "Playwright Browser Executable Missing",
+            "explanation": "The automated browser binary was deleted or is missing from the local cache.",
+            "steps": [
+                "Open a terminal on your Mac Mini.",
+                "Run the following command to reinstall Chromium to the persistent directory:",
+                "  PLAYWRIGHT_BROWSERS_PATH=./playwright-browsers python3 -m playwright install chromium"
+            ]
+        }
+
+    # Check for cloudflare/timeout errors during setup
+    if "timeout 25000ms exceeded" in a_combined or "failed to create/load game room" in a_combined:
+        return {
+            "status": "error",
+            "title": "Poker Now Creation Timeout (Possible Anti-Bot Block)",
+            "explanation": "The script timed out while waiting for Poker Now to create the table. This usually means the browser was blocked by a Cloudflare Turnstile captcha or your session has expired.",
+            "steps": [
+                "Open a terminal on the Mac Mini.",
+                "Run 'python3 login.py' to launch a headed browser.",
+                "Log into Poker Now again in the visible browser window, then press ENTER in the terminal to save your login session."
+            ]
+        }
+
+    # Check for Google Calendar auth errors
+    if "google.auth.exceptions" in a_combined or "calendar_credentials.json" in a_combined:
+        return {
+            "status": "error",
+            "title": "Google Calendar Authentication Failed",
+            "explanation": "The announcer script could not authenticate with the Google Calendar API.",
+            "steps": [
+                "Ensure that calendar_credentials.json is present in the root folder /Users/gregchew/pokernow.",
+                "Verify the CALENDAR_ID in your .env file matches the shared calendar's settings."
+            ]
+        }
+
+    # Check for other general errors
+    if "traceback (most recent call last)" in s_err.lower() or "runtimeerror" in s_combined:
+        return {
+            "status": "error",
+            "title": "Settlement Execution Crash",
+            "explanation": "The morning settlement task encountered an unexpected Python exception.",
+            "steps": [
+                "Review the Settlement Errors log below for the full traceback.",
+                "Verify that your input data files (like payment_info.csv or local data files) are not corrupted."
+            ]
+        }
+
+    if "traceback (most recent call last)" in a_err.lower() or "runtimeerror" in a_combined:
+        return {
+            "status": "error",
+            "title": "Game Announcer Execution Crash",
+            "explanation": "The table creation task encountered an unexpected Python exception.",
+            "steps": [
+                "Review the Announcer Errors log below for the full traceback.",
+                "Verify that schedule.json has correct syntax and formats."
+            ]
+        }
+
+    # Check for successes
+    if "settlement completed!" in s_combined:
+        return {
+            "status": "success",
+            "title": "Settlement Runs Operational",
+            "explanation": "The last settlement was completed successfully. Transactions were optimized, and payout emails were sent to the group address.",
+            "steps": ["No actions required. All morning settlements are fully operational."]
+        }
+
+    if "success: created" in a_combined:
+        return {
+            "status": "success",
+            "title": "Table Creations Operational",
+            "explanation": "The last game night tables were created successfully, clipboard links updated, emails sent, and calendar events synced.",
+            "steps": ["No actions required. Active table links are displayed in the panel above."]
+        }
+
+    return diagnosis
+
 class WebUIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Silence standard HTTP requests logging in stdout
@@ -95,14 +218,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     pass
 
             with status_lock:
+                a_stdout = get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stdout.log"))
+                a_stderr = get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stderr.log"))
+                s_stdout = get_last_log_lines(os.path.join(WORKING_DIR, "output/next_morning_stdout.log"))
+                s_stderr = get_last_log_lines(os.path.join(WORKING_DIR, "output/next_morning_stderr.log"))
+                
+                diagnosis = triage_logs(a_stdout, a_stderr, s_stdout, s_stderr)
+                
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
                     "last_games": last_games,
-                    "announcer_stdout": get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stdout.log")),
-                    "announcer_stderr": get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stderr.log")),
-                    "settlement_stdout": get_last_log_lines(os.path.join(WORKING_DIR, "output/next_morning_stdout.log")),
-                    "settlement_stderr": get_last_log_lines(os.path.join(WORKING_DIR, "output/next_morning_stderr.log")),
+                    "announcer_stdout": a_stdout,
+                    "announcer_stderr": a_stderr,
+                    "settlement_stdout": s_stdout,
+                    "settlement_stderr": s_stderr,
+                    "diagnosis": diagnosis
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         else:
@@ -402,6 +533,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
         </header>
 
         <div class="dashboard-grid">
+            <!-- Diagnostic Card -->
+            <div id="diagnostic-card" class="card full-width" style="display: none;">
+                <h2 id="diag-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    Diagnostic Advisor
+                </h2>
+                <p id="diag-explanation" style="margin-bottom: 1rem; line-height: 1.5; font-size: 0.95rem;"></p>
+                <div id="diag-steps-container" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Recommended Steps to Resolve:</div>
+                    <ul id="diag-steps" style="list-style-position: inside; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; line-height: 1.4;">
+                    </ul>
+                </div>
+            </div>
+
             <!-- Game Announcer Card -->
             <div class="card">
                 <h2>
@@ -476,6 +620,39 @@ class WebUIHandler(BaseHTTPRequestHandler):
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
+                    // Update Diagnosis Card
+                    const diagCard = document.getElementById('diagnostic-card');
+                    if (data.diagnosis && data.diagnosis.status !== 'info') {
+                        diagCard.style.display = 'block';
+                        
+                        const diagTitle = document.getElementById('diag-title');
+                        const diagExplanation = document.getElementById('diag-explanation');
+                        const diagSteps = document.getElementById('diag-steps');
+                        
+                        diagExplanation.textContent = data.diagnosis.explanation;
+                        
+                        // Set colors and titles based on status
+                        if (data.diagnosis.status === 'error') {
+                            diagTitle.innerHTML = `⚠️ Diagnostic Advisor: <span style="color: var(--danger); font-weight: 800;">${data.diagnosis.title}</span>`;
+                            diagCard.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                            diagCard.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.15)';
+                        } else if (data.diagnosis.status === 'success') {
+                            diagTitle.innerHTML = `✅ Diagnostic Advisor: <span style="color: var(--success); font-weight: 800;">${data.diagnosis.title}</span>`;
+                            diagCard.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                            diagCard.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.15)';
+                        }
+                        
+                        // Populate steps
+                        diagSteps.innerHTML = '';
+                        data.diagnosis.steps.forEach(step => {
+                            const li = document.createElement('li');
+                            li.textContent = step;
+                            diagSteps.appendChild(li);
+                        });
+                    } else {
+                        diagCard.style.display = 'none';
+                    }
+
                     // Update Announcer Status
                     const announcerBadge = document.getElementById('announcer-badge');
                     const btnAnnouncer = document.getElementById('btn-announcer');
