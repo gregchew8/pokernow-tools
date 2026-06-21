@@ -333,6 +333,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         .console-container {
             margin-top: 1rem;
+            position: relative;
         }
 
         .console-header {
@@ -340,6 +341,30 @@ class WebUIHandler(BaseHTTPRequestHandler):
             color: var(--text-muted);
             margin-bottom: 0.25rem;
             font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .copy-btn {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .copy-btn:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: var(--primary-hover);
+            color: #fff;
         }
 
         pre {
@@ -410,24 +435,36 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <h2>System Logs & Outputs</h2>
                 
                 <div class="console-container">
-                    <div class="console-header">Announcer Logs (Stdout)</div>
+                    <div class="console-header">
+                        <span>Announcer Logs (Stdout)</span>
+                        <button class="copy-btn" onclick="copyConsole('announcer-stdout', this)">Copy</button>
+                    </div>
                     <pre id="announcer-stdout">Loading logs...</pre>
                 </div>
                 
                 <div class="console-container error-log">
-                    <div class="console-header">Announcer Errors (Stderr)</div>
+                    <div class="console-header">
+                        <span>Announcer Errors (Stderr)</span>
+                        <button class="copy-btn" onclick="copyConsole('announcer-stderr', this)">Copy</button>
+                    </div>
                     <pre id="announcer-stderr">Loading logs...</pre>
                 </div>
                 
                 <hr style="margin: 2rem 0; border: none; border-top: 1px solid var(--border-color);">
                 
                 <div class="console-container">
-                    <div class="console-header">Settlement Logs (Stdout)</div>
+                    <div class="console-header">
+                        <span>Settlement Logs (Stdout)</span>
+                        <button class="copy-btn" onclick="copyConsole('settlement-stdout', this)">Copy</button>
+                    </div>
                     <pre id="settlement-stdout">Loading logs...</pre>
                 </div>
                 
                 <div class="console-container error-log">
-                    <div class="console-header">Settlement Errors (Stderr)</div>
+                    <div class="console-header">
+                        <span>Settlement Errors (Stderr)</span>
+                        <button class="copy-btn" onclick="copyConsole('settlement-stderr', this)">Copy</button>
+                    </div>
                     <pre id="settlement-stderr">Loading logs...</pre>
                 </div>
             </div>
@@ -528,6 +565,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     alert("Error triggering task: " + err);
                     updateDashboard();
                 });
+        }
+
+        function copyConsole(id, btn) {
+            const pre = document.getElementById(id);
+            if (!pre) return;
+            const text = pre.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.color = 'var(--success)';
+                btn.style.borderColor = 'var(--success)';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.color = '';
+                    btn.style.borderColor = '';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
         }
 
         // Periodically refresh dashboard every 2 seconds
