@@ -277,6 +277,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 
                 diagnosis = triage_logs(a_stdout, a_stderr, s_stdout, s_stderr)
                 
+                # Extract timestamps
+                a_start = parse_last_timestamp(a_stdout, "=== Execution Started:")
+                a_error = parse_last_timestamp(a_stderr, "=== Error Occurred:")
+                s_start = parse_last_timestamp(s_stdout, "=== Execution Started:")
+                s_error = parse_last_timestamp(s_stderr, "=== Error Occurred:")
+                
+                a_err_current = False
+                if a_error:
+                    if not a_start or a_error >= a_start:
+                        a_err_current = True
+                
+                s_err_current = False
+                if s_error:
+                    if not s_start or s_error >= s_start:
+                        s_err_current = True
+
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
@@ -285,7 +301,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "announcer_stderr": a_stderr,
                     "settlement_stdout": s_stdout,
                     "settlement_stderr": s_stderr,
-                    "diagnosis": diagnosis
+                    "diagnosis": diagnosis,
+                    "announcer_start_time": a_start.strftime("%Y-%m-%d %H:%M:%S") if a_start else None,
+                    "announcer_error_time": a_error.strftime("%Y-%m-%d %H:%M:%S") if a_error else None,
+                    "announcer_error_is_current": a_err_current,
+                    "settlement_start_time": s_start.strftime("%Y-%m-%d %H:%M:%S") if s_start else None,
+                    "settlement_error_time": s_error.strftime("%Y-%m-%d %H:%M:%S") if s_error else None,
+                    "settlement_error_is_current": s_err_current,
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         else:
@@ -575,6 +597,51 @@ class WebUIHandler(BaseHTTPRequestHandler):
             padding: 1rem 0;
             font-size: 0.95rem;
         }
+
+        .badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-left: 0.5rem;
+            display: inline-block;
+        }
+
+        .badge-active {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .badge-stale {
+            background-color: rgba(148, 163, 184, 0.15);
+            color: var(--text-muted);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .badge-success {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .log-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: normal;
+            margin-left: auto;
+            margin-right: 1rem;
+        }
+
+        .stale-log-box {
+            opacity: 0.45;
+            transition: opacity 0.25s ease;
+        }
+
+        .stale-log-box:hover {
+            opacity: 1.0;
+        }
     </style>
 </head>
 <body>
@@ -630,17 +697,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
             <div class="card full-width">
                 <h2>System Logs & Outputs</h2>
                 
-                <div class="console-container">
+                <div id="announcer-stdout-container" class="console-container">
                     <div class="console-header">
                         <span>Announcer Logs (Stdout)</span>
+                        <span id="announcer-stdout-time" class="log-meta"></span>
                         <button class="copy-btn" onclick="copyConsole('announcer-stdout', this)">Copy</button>
                     </div>
                     <pre id="announcer-stdout">Loading logs...</pre>
                 </div>
                 
-                <div class="console-container error-log">
+                <div id="announcer-stderr-container" class="console-container error-log">
                     <div class="console-header">
-                        <span>Announcer Errors (Stderr)</span>
+                        <span>Announcer Errors (Stderr) <span id="announcer-stderr-badge" class="badge"></span></span>
+                        <span id="announcer-stderr-time" class="log-meta"></span>
                         <button class="copy-btn" onclick="copyConsole('announcer-stderr', this)">Copy</button>
                     </div>
                     <pre id="announcer-stderr">Loading logs...</pre>
@@ -648,17 +717,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 
                 <hr style="margin: 2rem 0; border: none; border-top: 1px solid var(--border-color);">
                 
-                <div class="console-container">
+                <div id="settlement-stdout-container" class="console-container">
                     <div class="console-header">
                         <span>Settlement Logs (Stdout)</span>
+                        <span id="settlement-stdout-time" class="log-meta"></span>
                         <button class="copy-btn" onclick="copyConsole('settlement-stdout', this)">Copy</button>
                     </div>
                     <pre id="settlement-stdout">Loading logs...</pre>
                 </div>
                 
-                <div class="console-container error-log">
+                <div id="settlement-stderr-container" class="console-container error-log">
                     <div class="console-header">
-                        <span>Settlement Errors (Stderr)</span>
+                        <span>Settlement Errors (Stderr) <span id="settlement-stderr-badge" class="badge"></span></span>
+                        <span id="settlement-stderr-time" class="log-meta"></span>
                         <button class="copy-btn" onclick="copyConsole('settlement-stderr', this)">Copy</button>
                     </div>
                     <pre id="settlement-stderr">Loading logs...</pre>
@@ -740,6 +811,84 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     document.getElementById('announcer-stderr').textContent = data.announcer_stderr;
                     document.getElementById('settlement-stdout').textContent = data.settlement_stdout;
                     document.getElementById('settlement-stderr').textContent = data.settlement_stderr;
+
+                    // Announcer Logs Metadata & Badges
+                    const aStdoutTime = document.getElementById('announcer-stdout-time');
+                    const aStderrTime = document.getElementById('announcer-stderr-time');
+                    const aStderrBadge = document.getElementById('announcer-stderr-badge');
+                    const aStderrContainer = document.getElementById('announcer-stderr-container');
+
+                    if (data.announcer_start_time) {
+                        aStdoutTime.textContent = 'Last Run: ' + data.announcer_start_time;
+                    } else {
+                        aStdoutTime.textContent = '';
+                    }
+
+                    if (data.announcer_error_time) {
+                        aStderrTime.textContent = 'Error At: ' + data.announcer_error_time;
+                    } else {
+                        aStderrTime.textContent = '';
+                    }
+
+                    if (data.announcer_error_time) {
+                        if (data.announcer_error_is_current) {
+                            aStderrBadge.textContent = 'Active Error';
+                            aStderrBadge.className = 'badge badge-active';
+                            aStderrContainer.classList.remove('stale-log-box');
+                        } else {
+                            aStderrBadge.textContent = 'Stale / Resolved';
+                            aStderrBadge.className = 'badge badge-stale';
+                            aStderrContainer.classList.add('stale-log-box');
+                        }
+                    } else {
+                        if (data.announcer_start_time) {
+                            aStderrBadge.textContent = 'Success';
+                            aStderrBadge.className = 'badge badge-success';
+                        } else {
+                            aStderrBadge.textContent = '';
+                            aStderrBadge.className = 'badge';
+                        }
+                        aStderrContainer.classList.remove('stale-log-box');
+                    }
+
+                    // Settlement Logs Metadata & Badges
+                    const sStdoutTime = document.getElementById('settlement-stdout-time');
+                    const sStderrTime = document.getElementById('settlement-stderr-time');
+                    const sStderrBadge = document.getElementById('settlement-stderr-badge');
+                    const sStderrContainer = document.getElementById('settlement-stderr-container');
+
+                    if (data.settlement_start_time) {
+                        sStdoutTime.textContent = 'Last Run: ' + data.settlement_start_time;
+                    } else {
+                        sStdoutTime.textContent = '';
+                    }
+
+                    if (data.settlement_error_time) {
+                        sStderrTime.textContent = 'Error At: ' + data.settlement_error_time;
+                    } else {
+                        sStderrTime.textContent = '';
+                    }
+
+                    if (data.settlement_error_time) {
+                        if (data.settlement_error_is_current) {
+                            sStderrBadge.textContent = 'Active Error';
+                            sStderrBadge.className = 'badge badge-active';
+                            sStderrContainer.classList.remove('stale-log-box');
+                        } else {
+                            sStderrBadge.textContent = 'Stale / Resolved';
+                            sStderrBadge.className = 'badge badge-stale';
+                            sStderrContainer.classList.add('stale-log-box');
+                        }
+                    } else {
+                        if (data.settlement_start_time) {
+                            sStderrBadge.textContent = 'Success';
+                            sStderrBadge.className = 'badge badge-success';
+                        } else {
+                            sStderrBadge.textContent = '';
+                            sStderrBadge.className = 'badge';
+                        }
+                        sStderrContainer.classList.remove('stale-log-box');
+                    }
 
                     // Update Active Games
                     const activeContainer = document.getElementById('active-games-container');
