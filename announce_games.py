@@ -96,6 +96,7 @@ def sync_to_google_drive():
 
 def main():
     import datetime
+    print(f"\n=== Execution Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     load_env()
     
     args = sys.argv[1:]
@@ -220,6 +221,7 @@ if __name__ == "__main__":
         import traceback
         import datetime
         error_msg = traceback.format_exc()
+        print(f"\n=== Error Occurred: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===", file=sys.stderr)
         print(error_msg, file=sys.stderr)
         
         load_env()

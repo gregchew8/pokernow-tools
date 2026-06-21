@@ -42,13 +42,29 @@ def run_script_in_background(task_name, cmd):
     t.start()
     return True
 
-def get_last_log_lines(filepath, num_lines=30):
+def get_last_log_lines(filepath):
     if not os.path.exists(filepath):
         return "No log file found yet."
     try:
         with open(filepath, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            return "".join(lines[-num_lines:])
+            content = f.read()
+        
+        # We try to extract only the log contents starting from the most recent run
+        started_marker = "=== Execution Started:"
+        error_marker = "=== Error Occurred:"
+        
+        last_started_idx = content.rfind(started_marker)
+        last_error_idx = content.rfind(error_marker)
+        
+        # Find the latest of the two headers
+        latest_idx = max(last_started_idx, last_error_idx)
+        
+        if latest_idx != -1:
+            return content[latest_idx:]
+        else:
+            # Fallback to the last 150 lines if no markers exist yet
+            lines = content.splitlines()
+            return "\n".join(lines[-150:])
     except Exception as e:
         return f"Error reading log file: {e}"
 

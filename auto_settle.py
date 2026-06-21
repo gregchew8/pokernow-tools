@@ -107,6 +107,8 @@ def sync_to_google_drive():
         print(f"Warning: Failed to back up files to Google Drive: {e}")
 
 def main():
+    import datetime
+    print(f"\n=== Execution Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     load_env()
     # 1. Sync player mapping first
     print("Step 1: Syncing player database...")
@@ -181,6 +183,7 @@ if __name__ == "__main__":
         import traceback
         import datetime
         error_msg = traceback.format_exc()
+        print(f"\n=== Error Occurred: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===", file=sys.stderr)
         print(error_msg, file=sys.stderr)
         
         load_env()
