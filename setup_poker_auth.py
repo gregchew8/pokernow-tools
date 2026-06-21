@@ -127,8 +127,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
             page.wait_for_url("**/games/*", timeout=20000)
             page.wait_for_timeout(1000) # Small breathing room for UI hydration
         except Exception as e:
-            print(f"Warning: URL did not change to games path, currently at {page.url}. Continuing anyway...")
-            page.wait_for_timeout(4000)
+            raise RuntimeError(f"Failed to create/load game room. URL did not redirect to a game path. Currently at: {page.url}")
         
         # Options & Configurations (use exact=False to avoid icon rendering/matching issues in CI)
         page.get_by_role("button", name="Options", exact=False).click()

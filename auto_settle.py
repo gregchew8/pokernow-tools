@@ -120,6 +120,15 @@ def main():
     with open("last_created_games.json", "r") as f:
         game_history = json.load(f)
 
+    # Prevent reconciling outdated games (e.g. if the previous night's game run failed)
+    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    game_date = game_history.get("date")
+    if game_date != yesterday and "--force" not in sys.argv:
+        print(f"Skipping settlement: Last created game date ({game_date}) does not match yesterday's date ({yesterday}).")
+        print("To force settlement of older games, run with: python3 auto_settle.py --force")
+        return
+
+    import datetime
     game_ids = game_history.get("game_ids", [])
     description = game_history.get("description", "")
     
