@@ -69,7 +69,23 @@ def get_last_log_lines(filepath):
     except Exception as e:
         return f"Error reading log file: {e}"
 
+def parse_last_timestamp(content, marker):
+    idx = content.rfind(marker)
+    if idx == -1:
+        return None
+    # Extract the line containing the marker
+    line_end = content.find("\n", idx)
+    line = content[idx:line_end] if line_end != -1 else content[idx:]
+    try:
+        ts_str = line.split(marker)[1].split("===")[0].strip()
+        import datetime
+        return datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+    except:
+        return None
+
 def triage_logs(a_out, a_err, s_out, s_err):
+    import datetime
+    
     # Default state: No runs or unknown state
     diagnosis = {
         "status": "info",
@@ -78,79 +94,85 @@ def triage_logs(a_out, a_err, s_out, s_err):
         "steps": ["Click 'Start Table Setup' or 'Run Manual Settlement' to begin."]
     }
 
-    # Combined stderr and stdout for easier checking
-    a_combined = (a_out + "\n" + a_err).lower()
-    s_combined = (s_out + "\n" + s_err).lower()
+    # Extract last execution started and error timestamps
+    a_start = parse_last_timestamp(a_out, "=== Execution Started:")
+    a_error = parse_last_timestamp(a_err, "=== Error Occurred:")
+    
+    s_start = parse_last_timestamp(s_out, "=== Execution Started:")
+    s_error = parse_last_timestamp(s_err, "=== Error Occurred:")
 
-    # Look for errors first in Settlement (since it is the most recent task if both run)
-    # Check for missing player nickname in payment mapping
-    nickname_match = re.search(r"player with nickname '([^']+)' not found", s_combined)
-    if nickname_match:
-        nickname = nickname_match.group(1)
-        return {
-            "status": "error",
-            "title": "Missing Player Payment Mapping",
-            "explanation": f"The settlement engine failed because a player with the nickname '{nickname}' is not registered in your player database.",
-            "steps": [
-                f"Open your player database Google Sheet.",
-                f"Add a new row mapping nickname '{nickname}' to their Venmo handle.",
-                "Wait 5 seconds for Google Drive sync, then click 'Run Manual Settlement' again."
-            ]
-        }
+    # Determine if the last Announcer and Settlement runs failed
+    # If the last start timestamp is greater than the last error timestamp, it succeeded!
+    # (If a timestamp is None, we assume there is no event of that type).
+    a_failed = False
+    if a_error:
+        if not a_start or a_error >= a_start:
+            a_failed = True
+            
+    s_failed = False
+    if s_error:
+        if not s_start or s_error >= s_start:
+            s_failed = True
 
-    # Check for SMTP auth errors
-    if "smtpauthenticationerror" in a_combined or "smtpauthenticationerror" in s_combined:
-        return {
-            "status": "error",
-            "title": "Email Authentication (SMTP) Failed",
-            "explanation": "The email notification script could not log into your Gmail account. This is usually due to an incorrect or revoked Google App Password.",
-            "steps": [
-                "Verify that EMAIL_SENDER is set correctly in your .env file.",
-                "Generate a new Google App Password from your Google Account security settings.",
-                "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password (without spaces)."
-            ]
-        }
+    # If the last runs did not fail, check for successes to display success banners
+    if not a_failed and not s_failed:
+        # Check for successes
+        if s_start and "settlement completed!" in s_out.lower():
+            return {
+                "status": "success",
+                "title": "Settlement Runs Operational",
+                "explanation": "The last settlement was completed successfully. Transactions were optimized, and payout emails were sent to the group address.",
+                "steps": ["No actions required. All morning settlements are fully operational."]
+            }
+        if a_start and "success: created" in a_out.lower():
+            return {
+                "status": "success",
+                "title": "Table Creations Operational",
+                "explanation": "The last game night tables were created successfully, clipboard links updated, emails sent, and calendar events synced.",
+                "steps": ["No actions required. Active table links are displayed in the panel above."]
+            }
+        return diagnosis
 
-    # Check for Playwright browser missing
-    if "executable doesn't exist" in a_combined or "looks like playwright was just installed" in a_combined:
-        return {
-            "status": "error",
-            "title": "Playwright Browser Executable Missing",
-            "explanation": "The automated browser binary was deleted or is missing from the local cache.",
-            "steps": [
-                "Open a terminal on your Mac Mini.",
-                "Run the following command to reinstall Chromium to the persistent directory:",
-                "  PLAYWRIGHT_BROWSERS_PATH=./playwright-browsers python3 -m playwright install chromium"
-            ]
-        }
+    # If we reached here, at least one of the runs failed.
+    # Determine which ran more recently or failed last.
+    # We will prioritize triaging the one that failed most recently.
+    announcer_failed_last = True
+    if a_failed and s_failed:
+        if a_error and s_error and s_error > a_error:
+            announcer_failed_last = False
+    elif s_failed:
+        announcer_failed_last = False
 
-    # Check for cloudflare/timeout errors during setup
-    if "timeout 25000ms exceeded" in a_combined or "failed to create/load game room" in a_combined:
-        return {
-            "status": "error",
-            "title": "Poker Now Creation Timeout (Possible Anti-Bot Block)",
-            "explanation": "The script timed out while waiting for Poker Now to create the table. This usually means the browser was blocked by a Cloudflare Turnstile captcha or your session has expired.",
-            "steps": [
-                "Open a terminal on the Mac Mini.",
-                "Run 'python3 login.py' to launch a headed browser.",
-                "Log into Poker Now again in the visible browser window, then press ENTER in the terminal to save your login session."
-            ]
-        }
+    if not announcer_failed_last:
+        # Triage Settlement errors
+        s_combined = (s_out + "\n" + s_err).lower()
+        nickname_match = re.search(r"player with nickname '([^']+)' not found", s_combined)
+        if nickname_match:
+            nickname = nickname_match.group(1)
+            return {
+                "status": "error",
+                "title": "Missing Player Payment Mapping",
+                "explanation": f"The settlement engine failed because a player with the nickname '{nickname}' is not registered in your player database.",
+                "steps": [
+                    f"Open your player database Google Sheet.",
+                    f"Add a new row mapping nickname '{nickname}' to their Venmo handle.",
+                    "Wait 5 seconds for Google Drive sync, then click 'Run Manual Settlement' again."
+                ]
+            }
 
-    # Check for Google Calendar auth errors
-    if "google.auth.exceptions" in a_combined or "calendar_credentials.json" in a_combined:
-        return {
-            "status": "error",
-            "title": "Google Calendar Authentication Failed",
-            "explanation": "The announcer script could not authenticate with the Google Calendar API.",
-            "steps": [
-                "Ensure that calendar_credentials.json is present in the root folder /Users/gregchew/pokernow.",
-                "Verify the CALENDAR_ID in your .env file matches the shared calendar's settings."
-            ]
-        }
+        if "smtpauthenticationerror" in s_combined:
+            return {
+                "status": "error",
+                "title": "Email Authentication (SMTP) Failed (Settlement)",
+                "explanation": "The email notification script could not log into your Gmail account during settlement. This is usually due to an incorrect or revoked Google App Password.",
+                "steps": [
+                    "Verify that EMAIL_SENDER is set correctly in your .env file.",
+                    "Generate a new Google App Password from your Google Account security settings.",
+                    "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password."
+                ]
+            }
 
-    # Check for other general errors
-    if "traceback (most recent call last)" in s_err.lower() or "runtimeerror" in s_combined:
+        # General Settlement crash
         return {
             "status": "error",
             "title": "Settlement Execution Crash",
@@ -160,8 +182,57 @@ def triage_logs(a_out, a_err, s_out, s_err):
                 "Verify that your input data files (like payment_info.csv or local data files) are not corrupted."
             ]
         }
+    else:
+        # Triage Announcer errors
+        a_combined = (a_out + "\n" + a_err).lower()
+        if "smtpauthenticationerror" in a_combined:
+            return {
+                "status": "error",
+                "title": "Email Authentication (SMTP) Failed (Announcer)",
+                "explanation": "The email notification script could not log into your Gmail account during table announcements. This is usually due to an incorrect or revoked Google App Password.",
+                "steps": [
+                    "Verify that EMAIL_SENDER is set correctly in your .env file.",
+                    "Generate a new Google App Password from your Google Account security settings.",
+                    "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password."
+                ]
+            }
 
-    if "traceback (most recent call last)" in a_err.lower() or "runtimeerror" in a_combined:
+        if "executable doesn't exist" in a_combined or "looks like playwright was just installed" in a_combined:
+            return {
+                "status": "error",
+                "title": "Playwright Browser Executable Missing",
+                "explanation": "The automated browser binary was deleted or is missing from the local cache.",
+                "steps": [
+                    "Open a terminal on your Mac Mini.",
+                    "Run the following command to reinstall Chromium to the persistent directory:",
+                    "  PLAYWRIGHT_BROWSERS_PATH=./playwright-browsers python3 -m playwright install chromium"
+                ]
+            }
+
+        if "timeout 25000ms exceeded" in a_combined or "failed to create/load game room" in a_combined:
+            return {
+                "status": "error",
+                "title": "Poker Now Creation Timeout (Possible Anti-Bot Block)",
+                "explanation": "The script timed out while waiting for Poker Now to create the table. This usually means the browser was blocked by a Cloudflare Turnstile captcha or your session has expired.",
+                "steps": [
+                    "Open a terminal on the Mac Mini.",
+                    "Run 'python3 login.py' to launch a headed browser.",
+                    "Log into Poker Now again in the visible browser window, then press ENTER in the terminal to save your login session."
+                ]
+            }
+
+        if "google.auth.exceptions" in a_combined or "calendar_credentials.json" in a_combined:
+            return {
+                "status": "error",
+                "title": "Google Calendar Authentication Failed",
+                "explanation": "The announcer script could not authenticate with the Google Calendar API.",
+                "steps": [
+                    "Ensure that calendar_credentials.json is present in the root folder /Users/gregchew/pokernow.",
+                    "Verify the CALENDAR_ID in your .env file matches the shared calendar's settings."
+                ]
+            }
+
+        # General Announcer crash
         return {
             "status": "error",
             "title": "Game Announcer Execution Crash",
@@ -171,25 +242,6 @@ def triage_logs(a_out, a_err, s_out, s_err):
                 "Verify that schedule.json has correct syntax and formats."
             ]
         }
-
-    # Check for successes
-    if "settlement completed!" in s_combined:
-        return {
-            "status": "success",
-            "title": "Settlement Runs Operational",
-            "explanation": "The last settlement was completed successfully. Transactions were optimized, and payout emails were sent to the group address.",
-            "steps": ["No actions required. All morning settlements are fully operational."]
-        }
-
-    if "success: created" in a_combined:
-        return {
-            "status": "success",
-            "title": "Table Creations Operational",
-            "explanation": "The last game night tables were created successfully, clipboard links updated, emails sent, and calendar events synced.",
-            "steps": ["No actions required. Active table links are displayed in the panel above."]
-        }
-
-    return diagnosis
 
 class WebUIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
