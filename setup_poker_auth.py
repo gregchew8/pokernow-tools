@@ -54,6 +54,7 @@ import json
 import datetime
 import subprocess
 import os
+import random
 
 # Set custom Playwright browsers path to persist Chromium executable outside macOS Library cache sweeps
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/Users/gregchew/pokernow/playwright-browsers"
@@ -110,54 +111,125 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         print(f"Creating {game_type.upper()} table {table_num} with blinds {sb}/{bb} ({idx+1} of {total_tables})...")
         
         # Reuse the default open tab for the first table, open new tabs for others
+        # Reuse the default open tab for the first table, open new tabs for others
         if idx == 0 and context.pages:
             page = context.pages[0]
         else:
             page = context.new_page()
             
         page.goto("https://www.pokernow.com/start-game", timeout=60000, wait_until="domcontentloaded")
+        page.wait_for_timeout(random.randint(1000, 2500)) # Random pause after page load
         
         # Enter Nickname (avoid pressing Enter to prevent premature submit)
-        page.get_by_role("textbox", name="Your Nickname").click()
-        page.get_by_role("textbox", name="Your Nickname").fill("Rerun")
-        page.get_by_role("button", name="Create Game").click()
+        nickname_field = page.get_by_role("textbox", name="Your Nickname")
+        nickname_field.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        nickname_field.click()
+        page.wait_for_timeout(random.randint(300, 800))
+        
+        # Simulate natural typing
+        nickname_field.type("Rerun", delay=random.randint(100, 250))
+        page.wait_for_timeout(random.randint(600, 1500))
+        
+        create_btn = page.get_by_role("button", name="Create Game")
+        create_btn.hover()
+        page.wait_for_timeout(random.randint(300, 800))
+        create_btn.click()
         
         # Wait for the room to load (expect /games/ in the URL)
         try:
-            page.wait_for_url("**/games/*", timeout=20000)
-            page.wait_for_timeout(1000) # Small breathing room for UI hydration
+            page.wait_for_url("**/games/*", timeout=25000)
+            page.wait_for_timeout(random.randint(1500, 3000)) # Breather for UI hydration
         except Exception as e:
             raise RuntimeError(f"Failed to create/load game room. URL did not redirect to a game path. Currently at: {page.url}")
         
         # Options & Configurations (use exact=False to avoid icon rendering/matching issues in CI)
-        page.get_by_role("button", name="Options", exact=False).click()
-        page.get_by_role("button", name="Game Configurations", exact=False).click()
-        page.get_by_role("button", name="Yes").nth(1).click()
+        options_btn = page.get_by_role("button", name="Options", exact=False)
+        options_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        options_btn.click()
+        page.wait_for_timeout(random.randint(500, 1200))
+        
+        configs_btn = page.get_by_role("button", name="Game Configurations", exact=False)
+        configs_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        configs_btn.click()
+        page.wait_for_timeout(random.randint(1000, 2000)) # Wait for configs popup
+        
+        yes_btn = page.get_by_role("button", name="Yes").nth(1)
+        yes_btn.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        yes_btn.click()
         
         # Wait for configurations dialog, then select the Poker Variant
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(random.randint(1000, 2000))
         page.select_option("select#poker-variant", variant_value)
+        page.wait_for_timeout(random.randint(500, 1200))
         
         # SB and BB settings
-        page.get_by_role("textbox", name="SB").dblclick()
-        page.get_by_role("textbox", name="SB").fill(sb)
-        page.get_by_role("textbox", name="SB").press("Tab")
-        page.get_by_role("textbox", name="BB").fill(bb)
+        sb_field = page.get_by_role("textbox", name="SB")
+        sb_field.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        sb_field.dblclick()
+        page.wait_for_timeout(random.randint(300, 700))
+        sb_field.type(sb, delay=random.randint(80, 200))
+        page.wait_for_timeout(random.randint(400, 800))
+        sb_field.press("Tab")
+        page.wait_for_timeout(random.randint(300, 700))
         
-        page.get_by_role("button", name="Ask Players").click()
-        page.get_by_role("button", name="Yes").nth(3).click()
+        bb_field = page.get_by_role("textbox", name="BB")
+        bb_field.type(bb, delay=random.randint(80, 200))
+        page.wait_for_timeout(random.randint(600, 1500))
+        
+        ask_players_btn = page.get_by_role("button", name="Ask Players")
+        ask_players_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        ask_players_btn.click()
+        page.wait_for_timeout(random.randint(1000, 2000))
+        
+        yes_nth_btn = page.get_by_role("button", name="Yes").nth(3)
+        yes_nth_btn.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        yes_nth_btn.click()
+        page.wait_for_timeout(random.randint(500, 1200))
         
         # Time settings
-        page.get_by_role("textbox").nth(4).click()
-        page.get_by_role("textbox").nth(4).fill("60")
-        page.get_by_role("textbox").nth(4).press("Tab")
-        page.get_by_role("textbox").nth(5).fill("6")
+        timer1_field = page.get_by_role("textbox").nth(4)
+        timer1_field.click()
+        page.wait_for_timeout(random.randint(200, 500))
+        timer1_field.type("60", delay=random.randint(80, 200))
+        page.wait_for_timeout(random.randint(300, 700))
+        timer1_field.press("Tab")
+        page.wait_for_timeout(random.randint(300, 700))
+        
+        timer2_field = page.get_by_role("textbox").nth(5)
+        timer2_field.type("6", delay=random.randint(80, 200))
+        page.wait_for_timeout(random.randint(600, 1500))
         
         # Showdown Presentation Time to FAST (3S)
-        page.get_by_role("button", name="FAST (3S)", exact=False).click()
-        page.get_by_role("button", name="Update Game").click()
-        page.get_by_role("button", name="Ok").click()
-        page.get_by_role("button", name="« Back").click()
+        fast_btn = page.get_by_role("button", name="FAST (3S)", exact=False)
+        fast_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        fast_btn.click()
+        page.wait_for_timeout(random.randint(500, 1200))
+        
+        update_btn = page.get_by_role("button", name="Update Game")
+        update_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        update_btn.click()
+        page.wait_for_timeout(random.randint(1000, 2000))
+        
+        ok_btn = page.get_by_role("button", name="Ok")
+        ok_btn.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        ok_btn.click()
+        page.wait_for_timeout(random.randint(500, 1200))
+        
+        back_btn = page.get_by_role("button", name="« Back")
+        back_btn.hover()
+        page.wait_for_timeout(random.randint(300, 700))
+        back_btn.click()
+        page.wait_for_timeout(random.randint(1000, 2000))
         
         # Capture the game room URL
         game_url = page.url
