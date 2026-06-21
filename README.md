@@ -25,6 +25,9 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
 5. **Remote Web UI Control Panel** (`web_ui.py`)
    - Serves a secure, zero-dependency local dashboard on port `8080` (accessible over Tailscale).
    - Allows triggering announcer and settlement scripts manually with log outputs visible in real time.
+   - **Diagnostic Advisor**: Automatically parses and triages stdout/stderr outputs to identify common issues (e.g., SMTP auth failures, missing Playwright executables, missing player mappings) and displays clear recovery steps.
+   - **Active vs. Stale Log Tracking**: Extracts execution and error timestamps to label error boxes with status badges (`[ACTIVE ERROR]`, `[STALE / RESOLVED]`, or `[SUCCESS]`). Stale/old error panels are dimmed with hover-reveal styling to prevent confusion.
+   - **Clipboard Shortcuts**: Copy buttons next to each console log panel allow for quick sharing/debugging of stack traces.
 6. **Replication Script** (`sync_to_drive.sh`)
    - Replicates local changes and logs back to your Google Drive backup.
 
