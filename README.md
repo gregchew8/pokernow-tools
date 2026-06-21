@@ -15,13 +15,17 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
    - Persists Playwright browser binaries in `./playwright-browsers` to protect against macOS cache cleanups.
 2. **Automated Scheduler** (`setup_local_scheduler.py`)
    - Configures macOS `launchd` CalendarIntervals to run game setup and settlement calculations automatically.
+   - Registers a persistent Web UI dashboard daemon to run on boot.
 3. **Game Announcer** (`announce_games.py` & `update_calendar.py`)
    - Automatically runs table setups based on the day's config in `schedule.json`.
    - Sends rich email announcements to Google Groups.
    - Creates/updates game entries dynamically in Google Calendar.
 4. **Auto Settlement Engine** (`auto_settle.py` & `pokernow_settlement.py`)
    - Automatically runs morning calculations, downloads cashout CSVs, optimizes transactions, generates HTML reports, and emails payouts.
-5. **Replication Script** (`sync_to_drive.sh`)
+5. **Remote Web UI Control Panel** (`web_ui.py`)
+   - Serves a secure, zero-dependency local dashboard on port `8080` (accessible over Tailscale).
+   - Allows triggering announcer and settlement scripts manually with log outputs visible in real time.
+6. **Replication Script** (`sync_to_drive.sh`)
    - Replicates local changes and logs back to your Google Drive backup.
 
 ---
@@ -49,13 +53,14 @@ python3 login.py
 - Log in to your Poker Now account (e.g., via Google).
 - Once logged in, press **Enter** in your terminal window to save the session locally in `./chrome-profile`.
 
-### 4. Scheduler Installation
-Register the launchd agents for automated execution:
+### 4. Scheduler & Web UI Installation
+Register the launchd agents for automated execution and remote-control UI:
 ```bash
 python3 setup_local_scheduler.py
 ```
-- Game announcements trigger automatically at **5:00 PM** (Mon, Wed, Fri, Sat).
-- Settlements run automatically at **8:00 AM** (Tue, Thu, Sat, Sun).
+- **Web UI Control Panel**: Starts immediately and runs in the background on port `8080` (access via `http://<tailscale-ip>:8080` when on Tailscale).
+- **Game Announcements**: Triggers automatically at **5:00 PM** (Mon, Wed, Fri, Sat).
+- **Settlements**: Runs automatically at **8:00 AM** (Tue, Thu, Sat, Sun).
 
 ---
 
