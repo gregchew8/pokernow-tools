@@ -167,6 +167,9 @@ def main():
     with open(report_file, "r", encoding="utf-8") as f:
         report_html = f.read()
 
+    feedback_html = "<p style=\"font-size: 0.9rem; color: #666; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 20px;\">For any issues or questions, please send feedback to <a href=\"mailto:lcr-poker-admins@gmail.com\">lcr-poker-admins@gmail.com</a>.</p>"
+    report_html += feedback_html
+
     subject = f"Poker Settlement Payouts - {description}"
     
     # 4. Email/Discord the report
