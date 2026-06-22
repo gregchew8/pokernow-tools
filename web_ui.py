@@ -310,6 +310,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "settlement_error_is_current": s_err_current,
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
+        elif self.path == "/api/schedule":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            schedule_path = os.path.join(WORKING_DIR, "schedule.json")
+            schedule_data = {}
+            if os.path.exists(schedule_path):
+                try:
+                    with open(schedule_path, "r") as f:
+                        schedule_data = json.load(f)
+                except Exception as e:
+                    print(f"[WebUI] Error reading schedule.json: {e}")
+            self.wfile.write(json.dumps(schedule_data).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -328,6 +341,44 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/schedule":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                new_schedule = json.loads(post_data.decode("utf-8"))
+                schedule_path = os.path.join(WORKING_DIR, "schedule.json")
+                with open(schedule_path, "w") as f:
+                    json.dump(new_schedule, f, indent=4)
+                
+                # Sync changes to drive
+                subprocess.run(["./sync_to_drive.sh"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+        elif self.path == "/api/run-adhoc":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                adhoc_config = json.loads(post_data.decode("utf-8"))
+                config_str = json.dumps(adhoc_config)
+                cmd = [sys.executable, "announce_games.py", "--config", config_str]
+                success = run_script_in_background("announcer", cmd)
+                self.send_response(200 if success else 409)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -642,6 +693,182 @@ class WebUIHandler(BaseHTTPRequestHandler):
         .stale-log-box:hover {
             opacity: 1.0;
         }
+
+        /* Schedule Editor & Adhoc Panel Styles */
+        .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 1rem 0;
+            user-select: none;
+        }
+
+        .collapsible-header::after {
+            content: "▼";
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .collapsible-header.active::after {
+            transform: rotate(180deg);
+        }
+
+        .collapsible-content {
+            display: none;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 0.5rem;
+        }
+
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 768px) {
+            .schedule-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .day-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .day-title {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: capitalize;
+            margin-bottom: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.4rem;
+        }
+
+        .day-games {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .game-row {
+            display: flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+
+        .input-small {
+            background: #020617;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: #fff;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+        }
+
+        select.input-small {
+            cursor: pointer;
+        }
+
+        .input-stakes {
+            width: 70px;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0.2rem;
+            border-radius: 4px;
+            transition: color 0.2s, background-color 0.2s;
+        }
+
+        .btn-icon:hover {
+            color: var(--danger);
+            background-color: rgba(239, 68, 68, 0.1);
+        }
+
+        .btn-add-game {
+            display: block;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px dashed var(--border-color);
+            border-radius: 6px;
+            color: var(--text-muted);
+            padding: 0.4rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            margin-top: 0.5rem;
+            font-weight: 600;
+        }
+
+        .btn-add-game:hover {
+            border-color: var(--primary-hover);
+            color: #fff;
+            background: rgba(79, 70, 229, 0.1);
+        }
+
+        /* Adhoc form styling */
+        .adhoc-builder {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .adhoc-tables {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .btn-save-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn-action {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.08);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+        }
     </style>
 </head>
 <body>
@@ -690,6 +917,43 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <h2>Active Game Tables <span id="active-date" style="font-size: 0.85rem; color: var(--text-muted);"></span></h2>
                 <div id="active-games-container" class="games-list">
                     <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Schedule Editor Card -->
+            <div class="card full-width">
+                <h2 class="collapsible-header" id="schedule-header" onclick="toggleCollapsible('schedule-editor', 'schedule-header')">
+                    <span>Main Schedule Editor</span>
+                </h2>
+                <div id="schedule-editor" class="collapsible-content">
+                    <p class="subtitle" style="margin-bottom: 1.5rem;">Configure standard tables automatically scheduled for weekday runs.</p>
+                    <div id="schedule-container" class="schedule-grid">
+                        <!-- Loaded dynamically -->
+                    </div>
+                    <div class="btn-save-container">
+                        <button class="btn-action btn-secondary" onclick="loadSchedule()">Reset Changes</button>
+                        <button class="btn-action btn-primary" onclick="saveSchedule()">Save Schedule</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Adhoc Game Launcher Card -->
+            <div class="card full-width">
+                <h2 class="collapsible-header" id="adhoc-header" onclick="toggleCollapsible('adhoc-launcher', 'adhoc-header')">
+                    <span>Launch Ad-hoc Session</span>
+                </h2>
+                <div id="adhoc-launcher" class="collapsible-content">
+                    <p class="subtitle" style="margin-bottom: 1.5rem;">Configure and start a one-time game session tonight with custom stakes.</p>
+                    <div class="adhoc-builder">
+                        <div id="adhoc-tables-container" class="adhoc-tables">
+                            <!-- Rows added dynamically -->
+                        </div>
+                        <button class="btn-add-game" onclick="addAdhocRow()">+ Add Another Table</button>
+                        
+                        <div class="btn-save-container">
+                            <button id="btn-launch-adhoc" class="btn-action btn-primary" style="padding: 0.7rem 1.5rem;" onclick="launchAdhoc()">Launch Ad-hoc Session</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -961,6 +1225,204 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy text: ', err);
+            });
+        }
+
+        function toggleCollapsible(contentId, headerId) {
+            const content = document.getElementById(contentId);
+            const header = document.getElementById(headerId);
+            if (content.style.display === 'block') {
+                content.style.display = 'none';
+                header.classList.remove('active');
+            } else {
+                content.style.display = 'block';
+                header.classList.add('active');
+                if (contentId === 'schedule-editor') {
+                    loadSchedule();
+                } else if (contentId === 'adhoc-launcher') {
+                    initAdhocBuilder();
+                }
+            }
+        }
+
+        const ALL_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+        function loadSchedule() {
+            fetch('/api/schedule')
+                .then(res => res.json())
+                .then(schedule => {
+                    const container = document.getElementById('schedule-container');
+                    container.innerHTML = '';
+                    
+                    ALL_DAYS.forEach(day => {
+                        const panel = document.createElement('div');
+                        panel.className = 'day-panel';
+                        
+                        const title = document.createElement('div');
+                        title.className = 'day-title';
+                        title.innerHTML = `<span>${day}</span>`;
+                        panel.appendChild(title);
+                        
+                        const gamesDiv = document.createElement('div');
+                        gamesDiv.className = 'day-games';
+                        gamesDiv.id = `games-${day}`;
+                        panel.appendChild(gamesDiv);
+                        
+                        const addBtn = document.createElement('button');
+                        addBtn.className = 'btn-add-game';
+                        addBtn.textContent = '+ Add Table';
+                        addBtn.onclick = () => addScheduleGame(day);
+                        panel.appendChild(addBtn);
+                        
+                        container.appendChild(panel);
+
+                        // Populate existing games
+                        if (schedule[day] && Array.isArray(schedule[day])) {
+                            schedule[day].forEach(g => {
+                                addScheduleGame(day, g.type, g.sb, g.bb);
+                            });
+                        }
+                    });
+                })
+                .catch(err => console.error("Error loading schedule:", err));
+        }
+
+        function addScheduleGame(day, type="nlh", sb="0.25", bb="0.50") {
+            const gamesDiv = document.getElementById(`games-${day}`);
+            if (!gamesDiv) return;
+            
+            const row = document.createElement('div');
+            row.className = 'game-row';
+            
+            row.innerHTML = `
+                <select class="input-small game-type">
+                    <option value="nlh" ${type === 'nlh' ? 'selected' : ''}>NLH</option>
+                    <option value="plo" ${type === 'plo' ? 'selected' : ''}>PLO</option>
+                    <option value="plo8" ${type === 'plo8' ? 'selected' : ''}>PLO8</option>
+                </select>
+                <input type="text" class="input-small input-stakes game-sb" placeholder="SB" value="${sb}">
+                <span style="font-size:0.8rem;color:var(--text-muted);">/</span>
+                <input type="text" class="input-small input-stakes game-bb" placeholder="BB" value="${bb}">
+                <button class="btn-icon" onclick="this.parentElement.remove()" title="Remove game">✕</button>
+            `;
+            gamesDiv.appendChild(row);
+        }
+
+        function saveSchedule() {
+            const newSchedule = {};
+            
+            ALL_DAYS.forEach(day => {
+                const gamesDiv = document.getElementById(`games-${day}`);
+                if (!gamesDiv) return;
+                
+                const rows = gamesDiv.getElementsByClassName('game-row');
+                if (rows.length > 0) {
+                    newSchedule[day] = [];
+                    Array.from(rows).forEach(row => {
+                        const type = row.querySelector('.game-type').value;
+                        const sb = row.querySelector('.game-sb').value.trim();
+                        const bb = row.querySelector('.game-bb').value.trim();
+                        if (type && sb && bb) {
+                            newSchedule[day].push({ type, sb, bb });
+                        }
+                    });
+                }
+            });
+            
+            fetch('/api/schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSchedule)
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert("Schedule saved successfully!");
+                    loadSchedule();
+                } else {
+                    alert("Failed to save schedule.");
+                }
+            })
+            .catch(err => alert("Error saving schedule: " + err));
+        }
+
+        function initAdhocBuilder() {
+            const container = document.getElementById('adhoc-tables-container');
+            if (container.children.length === 0) {
+                addAdhocRow();
+            }
+        }
+
+        function addAdhocRow(type="nlh", sb="0.25", bb="0.50") {
+            const container = document.getElementById('adhoc-tables-container');
+            const row = document.createElement('div');
+            row.className = 'game-row';
+            
+            row.innerHTML = `
+                <select class="input-small adhoc-type">
+                    <option value="nlh" ${type === 'nlh' ? 'selected' : ''}>NLH</option>
+                    <option value="plo" ${type === 'plo' ? 'selected' : ''}>PLO</option>
+                    <option value="plo8" ${type === 'plo8' ? 'selected' : ''}>PLO8</option>
+                </select>
+                <input type="text" class="input-small input-stakes adhoc-sb" placeholder="SB" value="${sb}">
+                <span style="font-size:0.8rem;color:var(--text-muted);">/</span>
+                <input type="text" class="input-small input-stakes adhoc-bb" placeholder="BB" value="${bb}">
+                <button class="btn-icon" onclick="this.parentElement.remove()" title="Remove table">✕</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function launchAdhoc() {
+            const container = document.getElementById('adhoc-tables-container');
+            const rows = container.getElementsByClassName('game-row');
+            
+            if (rows.length === 0) {
+                alert("Please add at least one table before launching.");
+                return;
+            }
+            
+            const adhocConfig = [];
+            let isValid = true;
+            
+            Array.from(rows).forEach(row => {
+                const type = row.querySelector('.adhoc-type').value;
+                const sb = row.querySelector('.adhoc-sb').value.trim();
+                const bb = row.querySelector('.adhoc-bb').value.trim();
+                
+                if (!type || !sb || !bb) {
+                    isValid = false;
+                } else {
+                    adhocConfig.push({ type, sb, bb });
+                }
+            });
+            
+            if (!isValid) {
+                alert("Please fill in type, SB, and BB for all tables.");
+                return;
+            }
+            
+            // Disable launch button and announcer button optimistically
+            document.getElementById('btn-launch-adhoc').disabled = true;
+            document.getElementById('btn-announcer').disabled = true;
+            
+            fetch('/api/run-adhoc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(adhocConfig)
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert("Ad-hoc game night creation launched successfully!");
+                    document.getElementById('announcer-stderr-container').classList.remove('stale-log-box');
+                } else {
+                    alert("Failed to launch ad-hoc task. Another announcer/settlement task may be running.");
+                }
+                document.getElementById('btn-launch-adhoc').disabled = false;
+                updateDashboard();
+            })
+            .catch(err => {
+                alert("Error launching task: " + err);
+                document.getElementById('btn-launch-adhoc').disabled = false;
+                updateDashboard();
             });
         }
 
