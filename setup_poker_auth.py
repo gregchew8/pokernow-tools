@@ -203,7 +203,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         page.wait_for_timeout(random.randint(300, 700))
         
         timer2_field = page.get_by_role("textbox").nth(5)
-        timer2_field.type("6", delay=random.randint(80, 200))
+        timer2_field.type("60", delay=random.randint(80, 200))
         page.wait_for_timeout(random.randint(600, 1500))
         
         # Showdown Presentation Time to FAST (3S)
