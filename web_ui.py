@@ -27,11 +27,26 @@ def run_script_in_background(task_name, cmd):
             return False
         running_tasks[task_name] = True
         
+    if task_name == "announcer":
+        stdout_path = os.path.join(WORKING_DIR, "output/game_nights_stdout.log")
+        stderr_path = os.path.join(WORKING_DIR, "output/game_nights_stderr.log")
+    elif task_name == "settlement":
+        stdout_path = os.path.join(WORKING_DIR, "output/next_morning_stdout.log")
+        stderr_path = os.path.join(WORKING_DIR, "output/next_morning_stderr.log")
+    else:
+        stdout_path = None
+        stderr_path = None
+
     def worker():
         try:
             print(f"[WebUI] Launching background task: {task_name} -> {' '.join(cmd)}")
-            # Run the command and wait for it to complete
-            subprocess.run(cmd, cwd=WORKING_DIR, check=True)
+            out_f = open(stdout_path, "a", encoding="utf-8") if stdout_path else None
+            err_f = open(stderr_path, "a", encoding="utf-8") if stderr_path else None
+            try:
+                subprocess.run(cmd, cwd=WORKING_DIR, check=True, stdout=out_f, stderr=err_f)
+            finally:
+                if out_f: out_f.close()
+                if err_f: err_f.close()
             print(f"[WebUI] Task {task_name} finished successfully.")
         except Exception as e:
             print(f"[WebUI] Error running task {task_name}: {e}")
