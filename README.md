@@ -72,4 +72,6 @@ python3 setup_local_scheduler.py
 - **`schedule.json`**: Configures specific game formats, blinds, and tables for each weekday.
 - **`.env`**: Stores secure SMTP settings, Google Sheet CSV URL, Discord Webhook, and Google Calendar ID.
 - **`payment_info.csv`**: Maps player aliases on Poker Now (`PN Alias`) to Venmo handles.
+- **Email Notification Branding**: Automated emails are sent with the display name `LCR Admins` and include a built-in feedback footer directing questions, suggestions, or improvements to `lcr-poker-admins@gmail.com`.
 - **⚠️ Personal Data**: Do **NOT** publish `.env`, `calendar_credentials.json`, `payment_info.csv` or the `chrome-profile/` directory to public repositories. They are excluded by `.gitignore`.
+
