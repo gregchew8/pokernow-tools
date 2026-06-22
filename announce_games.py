@@ -190,7 +190,7 @@ def main():
         html_lines.append(f"<li><strong><a href=\"{url}\">{game_type}{stakes_suffix} Table {table_num}</a></strong></li>")
         
     note_text = "The first person sitting at the table will be the first admin of the table for the night. Please shuffle the seats and start the tables when the players are ready to start"
-    feedback_text = "For any issues or questions, please send feedback to lcr-poker-admins@gmail.com."
+    feedback_text = "For any issues, questions, suggestions, or things we can improve on, please send feedback to lcr-poker-admins@gmail.com."
     
     text_lines.append("")
     text_lines.append(note_text)
@@ -199,7 +199,7 @@ def main():
     text_lines.append("")
     text_lines.append(feedback_text)
     
-    html_lines.append(f"</ul><p style=\"color: #555; font-style: italic;\">{note_text}</p><p>Good luck at the tables!</p><p style=\"font-size: 0.9rem; color: #666; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 20px;\">For any issues or questions, please send feedback to <a href=\"mailto:lcr-poker-admins@gmail.com\">lcr-poker-admins@gmail.com</a>.</p>")
+    html_lines.append(f"</ul><p style=\"color: #555; font-style: italic;\">{note_text}</p><p>Good luck at the tables!</p><p style=\"font-size: 0.9rem; color: #666; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 20px;\">For any issues, questions, suggestions, or things we can improve on, please send feedback to <a href=\"mailto:lcr-poker-admins@gmail.com\">lcr-poker-admins@gmail.com</a>.</p>")
     
     text_content = "\n".join(text_lines)
     html_content = "\n".join(html_lines)
