@@ -204,11 +204,21 @@ def main():
     text_content = "\n".join(text_lines)
     html_content = "\n".join(html_lines)
     
-    # Send email
-    send_email(subject, html_content, text_content)
-    
-    # Post to Discord
-    post_to_discord(subject, text_content)
+    if "--draft" in sys.argv:
+        draft_data = {
+            "type": "announcer",
+            "subject": subject,
+            "html_content": html_content,
+            "text_content": text_content
+        }
+        with open("pending_email.json", "w") as f:
+            json.dump(draft_data, f, indent=4)
+        print("\n=== Email Draft Saved: Awaiting Approval ===")
+    else:
+        # Send email
+        send_email(subject, html_content, text_content)
+        # Post to Discord
+        post_to_discord(subject, text_content)
 
     # Sync to Google Calendar
     print("\nStep 4: Syncing to Google Calendar...")

@@ -208,6 +208,16 @@ def main():
     # 4. Email/Discord the report
     if "--no-email" in args or "--test" in args:
         print("\n[TEST MODE] Skipped sending emails and Discord notifications.")
+    elif "--draft" in args:
+        draft_data = {
+            "type": "settlement",
+            "subject": subject,
+            "html_content": report_html,
+            "text_content": clean_text
+        }
+        with open("pending_email.json", "w") as f:
+            json.dump(draft_data, f, indent=4)
+        print("\n=== Email Draft Saved: Awaiting Approval ===")
     else:
         send_email(subject, report_html)
         post_to_discord(subject, report_html)

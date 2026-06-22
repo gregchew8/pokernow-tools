@@ -270,6 +270,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 except:
                     pass
 
+            # Load pending email draft
+            pending_email = {}
+            pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")
+            if os.path.exists(pending_email_path):
+                try:
+                    with open(pending_email_path, "r") as f:
+                        draft_data = json.load(f)
+                        pending_email = {
+                            "has_draft": True,
+                            "subject": draft_data.get("subject"),
+                            "type": draft_data.get("type")
+                        }
+                except:
+                    pass
+
             with status_lock:
                 a_stdout = get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stdout.log"))
                 a_stderr = get_last_log_lines(os.path.join(WORKING_DIR, "output/game_nights_stderr.log"))
@@ -309,7 +324,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "settlement_start_time": s_start.strftime("%Y-%m-%d %H:%M:%S") if s_start else None,
                     "settlement_error_time": s_error.strftime("%Y-%m-%d %H:%M:%S") if s_error else None,
                     "settlement_error_is_current": s_err_current,
-                    "server_time": datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p")
+                    "server_time": datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p"),
+                    "pending_email": pending_email
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         elif self.path == "/api/schedule":
@@ -330,7 +346,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/run-announcer":
+            content_length = int(self.headers.get('Content-Length', 0))
             cmd = [sys.executable, "announce_games.py"]
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    if payload.get("draft", False):
+                        cmd += ["--draft"]
+                except Exception as e:
+                    print(f"[WebUI] Error parsing run-announcer payload: {e}")
             success = run_script_in_background("announcer", cmd)
             self.send_response(200 if success else 409)
             self.send_header("Content-type", "application/json")
@@ -346,12 +371,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     desc = payload.get("description", "").strip()
                     gids = payload.get("game_ids", [])
                     is_test = payload.get("test", False)
+                    is_draft = payload.get("draft", False)
                     if desc:
                         cmd += ["--description", desc]
                     if gids:
                         cmd += ["--game_ids"] + gids
                     if is_test:
                         cmd += ["--no-email"]
+                    if is_draft:
+                        cmd += ["--draft"]
                 except Exception as e:
                     print(f"[WebUI] Error parsing run-settlement payload: {e}")
             else:
@@ -387,9 +415,17 @@ class WebUIHandler(BaseHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             try:
-                adhoc_config = json.loads(post_data.decode("utf-8"))
+                payload = json.loads(post_data.decode("utf-8"))
+                if isinstance(payload, dict) and "config" in payload:
+                    adhoc_config = payload["config"]
+                    is_draft = payload.get("draft", False)
+                else:
+                    adhoc_config = payload
+                    is_draft = False
                 config_str = json.dumps(adhoc_config)
                 cmd = [sys.executable, "announce_games.py", "--config", config_str, "--adhoc"]
+                if is_draft:
+                    cmd += ["--draft"]
                 success = run_script_in_background("announcer", cmd)
                 self.send_response(200 if success else 409)
                 self.send_header("Content-type", "application/json")
@@ -400,6 +436,37 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+        elif self.path == "/api/approve-email":
+            task_type = "announcer"
+            pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")
+            if os.path.exists(pending_email_path):
+                try:
+                    with open(pending_email_path, "r") as f:
+                        draft_data = json.load(f)
+                        if draft_data.get("type") == "settlement":
+                            task_type = "settlement"
+                except:
+                    pass
+            cmd = [sys.executable, "send_pending_email.py"]
+            success = run_script_in_background(task_type, cmd)
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/discard-email":
+            pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")
+            success = False
+            if os.path.exists(pending_email_path):
+                try:
+                    os.remove(pending_email_path)
+                    subprocess.run(["./sync_to_drive.sh"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    success = True
+                except Exception as e:
+                    print(f"[WebUI] Error deleting draft: {e}")
+            self.send_response(200 if success else 500)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -912,6 +979,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             border: 1px solid rgba(245, 158, 11, 0.3);
             box-shadow: 0 0 15px rgba(245, 158, 11, 0.08);
         }
+
+        .banner-info {
+            background-color: rgba(79, 70, 229, 0.15);
+            color: #a5b4fc;
+            border: 1px solid rgba(79, 70, 229, 0.3);
+            box-shadow: 0 0 15px rgba(79, 70, 229, 0.08);
+        }
     </style>
 </head>
 <body>
@@ -924,6 +998,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         <div id="override-banner" class="banner banner-warning" style="display: none;">
             ⚠️ Standard schedule is overridden for the night! Ad-hoc games are currently active.
+        </div>
+
+        <div id="draft-banner" class="banner banner-info" style="display: none;">
+            <span>📧 Pending email draft: <strong id="draft-subject" style="color: #fff;"></strong></span>
+            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0;" onclick="discardDraft()">Discard</button>
+                <button class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: var(--success);" onclick="approveDraft()">Send Email Now</button>
+            </div>
         </div>
 
         <div class="dashboard-grid">
@@ -947,6 +1029,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <span id="announcer-badge" class="status-badge status-idle">Idle</span>
                 </h2>
                 <p class="subtitle">Launches room creations & sends email announcements based on today's schedule config.</p>
+                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                    <input type="checkbox" id="chk-announcer-draft" style="cursor: pointer;">
+                    <label for="chk-announcer-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
+                </div>
                 <button id="btn-announcer" class="btn" onclick="triggerTask('announcer')">Start Table Setup</button>
             </div>
 
@@ -957,6 +1043,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <span id="settlement-badge" class="status-badge status-idle">Idle</span>
                 </h2>
                 <p class="subtitle">Manually downloads cashout logs for current tables, runs payouts optimization, and emails results.</p>
+                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                    <input type="checkbox" id="chk-settlement-draft" style="cursor: pointer;">
+                    <label for="chk-settlement-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
+                </div>
                 <button id="btn-settlement" class="btn" onclick="triggerTask('settlement')">Run Manual Settlement</button>
             </div>
 
@@ -1002,6 +1092,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">
                             <input type="checkbox" id="chk-adhoc-acknowledge" onchange="toggleAdhocButton()" style="margin-top: 0.2rem; cursor: pointer;">
                             <label for="chk-adhoc-acknowledge" style="cursor: pointer; line-height: 1.4;">I acknowledge that launching this ad-hoc session will override the standard schedule for tonight and I explicitly want to proceed.</label>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+                            <input type="checkbox" id="chk-adhoc-draft" style="cursor: pointer;">
+                            <label for="chk-adhoc-draft" style="cursor: pointer;">Draft email only (requires manual approval)</label>
                         </div>
 
                         <div class="btn-save-container">
@@ -1249,6 +1344,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     } else {
                         overrideBanner.style.display = 'none';
                     }
+
+                    // Update draft banner
+                    const draftBanner = document.getElementById('draft-banner');
+                    if (data.pending_email && data.pending_email.has_draft) {
+                        draftBanner.style.display = 'flex';
+                        document.getElementById('draft-subject').textContent = data.pending_email.subject;
+                    } else {
+                        draftBanner.style.display = 'none';
+                    }
                 })
                 .catch(err => console.error("Error updating dashboard:", err));
         }
@@ -1308,18 +1412,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 document.getElementById('btn-announcer').disabled = true;
                 document.getElementById('btn-settlement').disabled = true;
                 
+                const isDraft = document.getElementById('chk-settlement-draft').checked;
                 fetch('/api/run-settlement', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         description: desc.trim(),
                         game_ids: parsedIds,
-                        test: isTest
+                        test: isTest,
+                        draft: isDraft
                     })
                 })
                 .then(res => {
                     if (res.ok) {
-                        alert(isTest ? "Manual settlement TEST run triggered successfully!" : "Manual settlement calculation triggered successfully!");
+                        alert(isDraft ? "Manual settlement draft saved successfully!" : (isTest ? "Manual settlement TEST run triggered successfully!" : "Manual settlement calculation triggered successfully!"));
                     } else {
                         alert("Failed to start settlement. Task is already running or conflict occurred.");
                     }
@@ -1337,7 +1443,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
             document.getElementById('btn-announcer').disabled = true;
             document.getElementById('btn-settlement').disabled = true;
 
-            fetch(endpoint, { method: 'POST' })
+            const isDraft = document.getElementById('chk-announcer-draft').checked;
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ draft: isDraft })
+            })
                 .then(res => {
                     if (res.ok) {
                         updateDashboard();
@@ -1551,14 +1662,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
             document.getElementById('btn-launch-adhoc').disabled = true;
             document.getElementById('btn-announcer').disabled = true;
             
+            const isDraft = document.getElementById('chk-adhoc-draft').checked;
             fetch('/api/run-adhoc', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(adhocConfig)
+                body: JSON.stringify({
+                    config: adhocConfig,
+                    draft: isDraft
+                })
             })
             .then(res => {
                 if (res.ok) {
-                    alert("Ad-hoc game night creation launched successfully!");
+                    alert(isDraft ? "Ad-hoc table creation draft saved successfully!" : "Ad-hoc game night creation launched successfully!");
                     document.getElementById('announcer-stderr-container').classList.remove('stale-log-box');
                     // Reset acknowledgement checkbox
                     document.getElementById('chk-adhoc-acknowledge').checked = false;
@@ -1574,6 +1689,40 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 document.getElementById('btn-launch-adhoc').disabled = false;
                 updateDashboard();
             });
+        }
+
+        function approveDraft() {
+            if (!confirm("Are you sure you want to send this pending email now?")) return;
+            fetch('/api/approve-email', { method: 'POST' })
+                .then(res => {
+                    if (res.ok) {
+                        alert("Pending email approved and sent!");
+                    } else {
+                        alert("Failed to send pending email. Make sure another task isn't running.");
+                    }
+                    updateDashboard();
+                })
+                .catch(err => {
+                    alert("Error approving email: " + err);
+                    updateDashboard();
+                });
+        }
+
+        function discardDraft() {
+            if (!confirm("Are you sure you want to discard this pending email draft?")) return;
+            fetch('/api/discard-email', { method: 'POST' })
+                .then(res => {
+                    if (res.ok) {
+                        alert("Pending email draft discarded.");
+                    } else {
+                        alert("Failed to discard pending email draft.");
+                    }
+                    updateDashboard();
+                })
+                .catch(err => {
+                    alert("Error discarding email: " + err);
+                    updateDashboard();
+                });
         }
 
         // Periodically refresh dashboard every 2 seconds
