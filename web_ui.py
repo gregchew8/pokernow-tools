@@ -345,10 +345,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     payload = json.loads(post_data.decode("utf-8"))
                     desc = payload.get("description", "").strip()
                     gids = payload.get("game_ids", [])
+                    is_test = payload.get("test", False)
                     if desc:
                         cmd += ["--description", desc]
                     if gids:
                         cmd += ["--game_ids"] + gids
+                    if is_test:
+                        cmd += ["--no-email"]
                 except Exception as e:
                     print(f"[WebUI] Error parsing run-settlement payload: {e}")
             else:
@@ -1299,6 +1302,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     updateDashboard();
                     return;
                 }
+
+                const isTest = confirm("Run in TEST mode? \n\n• Click OK to run calculations and see the payout table in logs (NO emails or Discord posts will be sent).\n\n• Click Cancel to run a standard settlement and send notifications.");
                 
                 document.getElementById('btn-announcer').disabled = true;
                 document.getElementById('btn-settlement').disabled = true;
@@ -1308,12 +1313,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         description: desc.trim(),
-                        game_ids: parsedIds
+                        game_ids: parsedIds,
+                        test: isTest
                     })
                 })
                 .then(res => {
                     if (res.ok) {
-                        alert("Manual settlement calculation triggered successfully!");
+                        alert(isTest ? "Manual settlement TEST run triggered successfully!" : "Manual settlement calculation triggered successfully!");
                     } else {
                         alert("Failed to start settlement. Task is already running or conflict occurred.");
                     }

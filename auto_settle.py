@@ -206,8 +206,11 @@ def main():
     subject = f"Poker Settlement Payouts - {description}"
     
     # 4. Email/Discord the report
-    send_email(subject, report_html)
-    post_to_discord(subject, report_html)
+    if "--no-email" in args or "--test" in args:
+        print("\n[TEST MODE] Skipped sending emails and Discord notifications.")
+    else:
+        send_email(subject, report_html)
+        post_to_discord(subject, report_html)
     
     # Automatically backup outputs to Google Drive
     sync_to_google_drive()
