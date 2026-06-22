@@ -114,28 +114,48 @@ def main():
     print("Step 1: Syncing player database...")
     subprocess.run([sys.executable, "sync_players.py"], check=True)
 
-    # 2. Load the last created game details
-    if not os.path.exists("last_created_games.json"):
-        print("Error: last_created_games.json does not exist. No games recorded for settlement.")
-        sys.exit(1)
-
-    with open("last_created_games.json", "r") as f:
-        game_history = json.load(f)
-
-    # Prevent reconciling outdated games (e.g. if the previous night's game run failed)
-    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    game_date = game_history.get("date")
-    if game_date != yesterday and "--force" not in sys.argv:
-        print(f"Skipping settlement: Last created game date ({game_date}) does not match yesterday's date ({yesterday}).")
-        print("To force settlement of older games, run with: python3 auto_settle.py --force")
-        return
-
-    import datetime
-    game_ids = game_history.get("game_ids", [])
-    description = game_history.get("description", "")
+    # 2. Check CLI overrides
+    game_ids = []
+    description = ""
+    args = sys.argv[1:]
+    is_manual_override = False
     
+    if "--game_ids" in args:
+        is_manual_override = True
+        idx = args.index("--game_ids")
+        for arg in args[idx+1:]:
+            if arg.startswith("-"):
+                break
+            game_ids.append(arg)
+            
+    if "--description" in args:
+        # Only treat as manual override if --game_ids is also specified
+        idx = args.index("--description")
+        if idx + 1 < len(args):
+            description = args[idx+1]
+
+    if not is_manual_override:
+        if not os.path.exists("last_created_games.json"):
+            print("Error: last_created_games.json does not exist. No games recorded for settlement.")
+            sys.exit(1)
+
+        with open("last_created_games.json", "r") as f:
+            game_history = json.load(f)
+
+        # Prevent reconciling outdated games (e.g. if the previous night's game run failed)
+        yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        game_date = game_history.get("date")
+        if game_date != yesterday and "--force" not in sys.argv:
+            print(f"Skipping settlement: Last created game date ({game_date}) does not match yesterday's date ({yesterday}).")
+            print("To force settlement of older games, run with: python3 auto_settle.py --force")
+            return
+
+        game_ids = game_history.get("game_ids", [])
+        if not description:  # only fallback if not already provided
+            description = game_history.get("description", "")
+            
     if not game_ids:
-        print("Error: No game IDs found in last_created_games.json.")
+        print("Error: No game IDs provided or found in last_created_games.json.")
         sys.exit(1)
 
     print(f"Step 2: Calculating settlement for games: {game_ids} with desc {description}")
@@ -166,6 +186,19 @@ def main():
 
     with open(report_file, "r", encoding="utf-8") as f:
         report_html = f.read()
+
+    # Clean report for stdout display (so the admin can copy-paste from the Web UI log console)
+    import re
+    clean_text = report_html
+    # Remove HTML link tags like <a href="...">text</a> -> text
+    clean_text = re.sub(r'<a\s+[^>]*>([^<]+)</a>', r'\1', clean_text)
+    # Remove other tags like <h4>, </pre>, etc.
+    clean_text = re.sub(r'<[^>]+>', '', clean_text)
+    print("\n" + "="*50)
+    print(" PRINTABLE SETTLEMENT OUTPUT FOR COPY-PASTE:")
+    print("="*50)
+    print(clean_text.strip())
+    print("="*50 + "\n")
 
     feedback_html = "<p style=\"font-size: 0.9rem; color: #666; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 20px;\">For any issues, questions, suggestions, or things we can improve on, please send feedback to <a href=\"mailto:lcr-poker-admins@gmail.com\">lcr-poker-admins@gmail.com</a>.</p>"
     report_html += feedback_html

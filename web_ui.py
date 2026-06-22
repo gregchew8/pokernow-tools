@@ -337,7 +337,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         elif self.path == "/api/run-settlement":
-            cmd = [sys.executable, "auto_settle.py", "--force"]
+            content_length = int(self.headers.get('Content-Length', 0))
+            cmd = [sys.executable, "auto_settle.py"]
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    desc = payload.get("description", "").strip()
+                    gids = payload.get("game_ids", [])
+                    if desc:
+                        cmd += ["--description", desc]
+                    if gids:
+                        cmd += ["--game_ids"] + gids
+                except Exception as e:
+                    print(f"[WebUI] Error parsing run-settlement payload: {e}")
+            else:
+                cmd += ["--force"]
+
             success = run_script_in_background("settlement", cmd)
             self.send_response(200 if success else 409)
             self.send_header("Content-type", "application/json")
@@ -385,7 +401,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def get_html_dashboard(self):
-        return """<!DOCTYPE html>
+        return r"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1235,9 +1251,83 @@ class WebUIHandler(BaseHTTPRequestHandler):
         }
 
         function triggerTask(taskName) {
-            const endpoint = taskName === 'announcer' ? '/api/run-announcer' : '/api/run-settlement';
-            
-            // Optimistically disable buttons
+            if (taskName === 'settlement') {
+                const today = new Date();
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                
+                const yyyy = yesterday.getFullYear();
+                let mm = yesterday.getMonth() + 1;
+                let dd = yesterday.getDate();
+                
+                if (dd < 10) dd = '0' + dd;
+                if (mm < 10) mm = '0' + mm;
+                
+                const yearShort = String(yyyy).substring(2);
+                const defaultDesc = `${mm}${dd}${yearShort}`;
+                
+                const desc = prompt("Enter settlement description/date (MMDDYY):", defaultDesc);
+                if (desc === null) {
+                    updateDashboard();
+                    return;
+                }
+                
+                const rawInput = prompt("Enter Game URLs or Game IDs (separated by spaces or commas):");
+                if (rawInput === null) {
+                    updateDashboard();
+                    return;
+                }
+                
+                const parsedIds = [];
+                const tokens = rawInput.split(/[\s,\n]+/);
+                tokens.forEach(tok => {
+                    let clean = tok.trim();
+                    if (!clean) return;
+                    if (clean.includes("/games/")) {
+                        const parts = clean.split("/games/");
+                        if (parts.length > 1) {
+                            clean = parts[1].split(/[?#]/)[0];
+                        }
+                    }
+                    if (clean) {
+                        parsedIds.push(clean);
+                    }
+                });
+                
+                if (parsedIds.length === 0) {
+                    alert("No valid game IDs could be parsed from your input.");
+                    updateDashboard();
+                    return;
+                }
+                
+                document.getElementById('btn-announcer').disabled = true;
+                document.getElementById('btn-settlement').disabled = true;
+                
+                fetch('/api/run-settlement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        description: desc.trim(),
+                        game_ids: parsedIds
+                    })
+                })
+                .then(res => {
+                    if (res.ok) {
+                        alert("Manual settlement calculation triggered successfully!");
+                    } else {
+                        alert("Failed to start settlement. Task is already running or conflict occurred.");
+                    }
+                    updateDashboard();
+                })
+                .catch(err => {
+                    alert("Error triggering settlement: " + err);
+                    updateDashboard();
+                });
+                
+                return;
+            }
+
+            const endpoint = '/api/run-announcer';
             document.getElementById('btn-announcer').disabled = true;
             document.getElementById('btn-settlement').disabled = true;
 
