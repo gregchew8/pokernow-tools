@@ -282,6 +282,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
     game_history = {
         "date": today.strftime("%Y-%m-%d"),
         "description": today.strftime("%m%d%y"),
+        "is_adhoc": is_adhoc,
         "game_ids": [url.split("/games/")[-1] for url in urls],
         "tables": [{"game_type": t[0], "table_num": idx, "game_id": url.split("/games/")[-1], "sb": t[2] if len(t) == 4 else "0.25", "bb": t[3] if len(t) == 4 else "0.50"} for idx, (t, url) in enumerate(zip(tables_to_create, urls), 1)]
     }
@@ -324,6 +325,12 @@ if __name__ == "__main__":
     
     args = sys.argv[1:]
     
+    # Check for adhoc flag
+    is_adhoc = False
+    if "--adhoc" in args:
+        is_adhoc = True
+        args.remove("--adhoc")
+        
     # Check for headless flag
     headless = False
     if "--headless" in args:

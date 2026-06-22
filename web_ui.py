@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import re
+import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 
@@ -308,6 +309,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "settlement_start_time": s_start.strftime("%Y-%m-%d %H:%M:%S") if s_start else None,
                     "settlement_error_time": s_error.strftime("%Y-%m-%d %H:%M:%S") if s_error else None,
                     "settlement_error_is_current": s_err_current,
+                    "server_time": datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p")
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         elif self.path == "/api/schedule":
@@ -368,7 +370,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             try:
                 adhoc_config = json.loads(post_data.decode("utf-8"))
                 config_str = json.dumps(adhoc_config)
-                cmd = [sys.executable, "announce_games.py", "--config", config_str]
+                cmd = [sys.executable, "announce_games.py", "--config", config_str, "--adhoc"]
                 success = run_script_in_background("announcer", cmd)
                 self.send_response(200 if success else 409)
                 self.send_header("Content-type", "application/json")
@@ -869,6 +871,28 @@ class WebUIHandler(BaseHTTPRequestHandler):
         .btn-secondary:hover {
             background: rgba(255,255,255,0.15);
         }
+
+        /* Banner Styles */
+        .banner {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .banner-warning {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.08);
+        }
     </style>
 </head>
 <body>
@@ -876,7 +900,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
         <header>
             <h1>Poker Now Control Panel</h1>
             <p class="subtitle">Tailscale Secure Remote Management</p>
+            <div id="server-timestamp" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; color: #10b981; margin-top: 0.75rem; text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); font-weight: bold;">Loading system time...</div>
         </header>
+
+        <div id="override-banner" class="banner banner-warning" style="display: none;">
+            ⚠️ Standard schedule is overridden for the night! Ad-hoc games are currently active.
+        </div>
 
         <div class="dashboard-grid">
             <!-- Diagnostic Card -->
@@ -943,15 +972,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <span>Launch Ad-hoc Session</span>
                 </h2>
                 <div id="adhoc-launcher" class="collapsible-content">
-                    <p class="subtitle" style="margin-bottom: 1.5rem;">Configure and start a one-time game session tonight with custom stakes.</p>
+                    <p class="subtitle" style="margin-bottom: 1rem;">Configure and start a one-time game session tonight with custom stakes.</p>
+                    <p style="background: rgba(245, 158, 11, 0.08); border-left: 4px solid #fbbf24; padding: 0.8rem 1rem; border-radius: 4px; font-size: 0.9rem; line-height: 1.5; color: #f59e0b; margin-bottom: 1.25rem;"><strong>💡 Note:</strong> Launching an ad-hoc session will override the standard calendar schedule for tonight. Standard automatic runs will be bypassed in favor of these custom configurations.</p>
                     <div class="adhoc-builder">
                         <div id="adhoc-tables-container" class="adhoc-tables">
                             <!-- Rows added dynamically -->
                         </div>
                         <button class="btn-add-game" onclick="addAdhocRow()">+ Add Another Table</button>
                         
+                        <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">
+                            <input type="checkbox" id="chk-adhoc-acknowledge" onchange="toggleAdhocButton()" style="margin-top: 0.2rem; cursor: pointer;">
+                            <label for="chk-adhoc-acknowledge" style="cursor: pointer; line-height: 1.4;">I acknowledge that launching this ad-hoc session will override the standard schedule for tonight and I explicitly want to proceed.</label>
+                        </div>
+
                         <div class="btn-save-container">
-                            <button id="btn-launch-adhoc" class="btn-action btn-primary" style="padding: 0.7rem 1.5rem;" onclick="launchAdhoc()">Launch Ad-hoc Session</button>
+                            <button id="btn-launch-adhoc" class="btn-action btn-primary" style="padding: 0.7rem 1.5rem;" onclick="launchAdhoc()" disabled>Launch Ad-hoc Session</button>
                         </div>
                     </div>
                 </div>
@@ -1184,6 +1219,17 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         activeDate.textContent = '';
                         activeContainer.innerHTML = '<div class="no-games">No active tables found. Click "Start Table Setup" to create them.</div>';
                     }
+                    
+                    // Update server timestamp
+                    document.getElementById('server-timestamp').textContent = data.server_time || 'Offline';
+
+                    // Update override banner
+                    const overrideBanner = document.getElementById('override-banner');
+                    if (data.last_games && data.last_games.is_adhoc) {
+                        overrideBanner.style.display = 'flex';
+                    } else {
+                        overrideBanner.style.display = 'none';
+                    }
                 })
                 .catch(err => console.error("Error updating dashboard:", err));
         }
@@ -1371,6 +1417,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             container.appendChild(row);
         }
 
+        function toggleAdhocButton() {
+            const checked = document.getElementById('chk-adhoc-acknowledge').checked;
+            document.getElementById('btn-launch-adhoc').disabled = !checked;
+        }
+
         function launchAdhoc() {
             const container = document.getElementById('adhoc-tables-container');
             const rows = container.getElementsByClassName('game-row');
@@ -1413,10 +1464,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 if (res.ok) {
                     alert("Ad-hoc game night creation launched successfully!");
                     document.getElementById('announcer-stderr-container').classList.remove('stale-log-box');
+                    // Reset acknowledgement checkbox
+                    document.getElementById('chk-adhoc-acknowledge').checked = false;
+                    toggleAdhocButton();
                 } else {
                     alert("Failed to launch ad-hoc task. Another announcer/settlement task may be running.");
+                    document.getElementById('btn-launch-adhoc').disabled = false;
                 }
-                document.getElementById('btn-launch-adhoc').disabled = false;
                 updateDashboard();
             })
             .catch(err => {
