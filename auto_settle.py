@@ -20,7 +20,7 @@ def send_email(subject, html_content):
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = receiver
+    msg['From'] = f"LCR Conciege Service <{receiver}>"
     msg['To'] = receiver
 
     # Use HTML content directly since pokernow_settlement produces rich HTML
