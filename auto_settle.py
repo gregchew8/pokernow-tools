@@ -13,6 +13,8 @@ def send_email(subject, html_content):
     sender = os.environ.get("EMAIL_SENDER")
     password = os.environ.get("EMAIL_PASSWORD")
     receiver = os.environ.get("EMAIL_RECEIVER")
+    email_from = os.environ.get("EMAIL_FROM", f"LCR Admins <{sender}>")
+    reply_to = os.environ.get("EMAIL_REPLY_TO", "noreply@lcr-poker.com")
 
     if not all([sender, password, receiver]):
         print("Skipping email settlement: EMAIL_SENDER, EMAIL_PASSWORD, or EMAIL_RECEIVER not set in environment.")
@@ -20,8 +22,9 @@ def send_email(subject, html_content):
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = f"LCR Admins <{sender}>"
+    msg['From'] = email_from
     msg['To'] = receiver
+    msg['Reply-To'] = reply_to
 
     # Use HTML content directly since pokernow_settlement produces rich HTML
     part = MIMEText(html_content, 'html')

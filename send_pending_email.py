@@ -60,6 +60,8 @@ def main():
     sender = os.environ.get("EMAIL_SENDER")
     password = os.environ.get("EMAIL_PASSWORD")
     receiver = os.environ.get("EMAIL_RECEIVER")
+    email_from = os.environ.get("EMAIL_FROM", f"LCR Admins <{sender}>")
+    reply_to = os.environ.get("EMAIL_REPLY_TO", "noreply@lcr-poker.com")
 
     if not all([sender, password, receiver]):
         print("Error: SMTP credentials or receiver not configured in .env.")
@@ -67,8 +69,9 @@ def main():
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = f"LCR Admins <{sender}>"
+    msg['From'] = email_from
     msg['To'] = receiver
+    msg['Reply-To'] = reply_to
 
     if text_content:
         part1 = MIMEText(text_content, 'plain')
