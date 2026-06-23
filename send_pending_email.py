@@ -6,7 +6,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-WORKING_DIR = "/Users/gregchew/pokernow"
+WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def load_env():
     env_file = os.path.join(WORKING_DIR, ".env")
@@ -100,8 +100,8 @@ def main():
         print("Draft email file removed successfully.")
         
         # Run Google Drive sync to replicate deletion
-        drive_path = "/Users/gregchew/Library/CloudStorage/GoogleDrive-gregchew@gmail.com/My Drive/pokernow"
-        if os.path.exists(drive_path):
+        drive_path = os.environ.get("GOOGLE_DRIVE_PATH")
+        if drive_path and os.path.exists(drive_path):
             import subprocess
             subprocess.run(["rsync", "-av", "--delete", "--exclude=chrome-profile", "--exclude=.git", WORKING_DIR + "/", drive_path + "/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             

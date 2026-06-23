@@ -50,7 +50,7 @@ GAME_NIGHT_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PLAYWRIGHT_BROWSERS_PATH</key>
-        <string>/Users/gregchew/pokernow/playwright-browsers</string>
+        <string>{working_dir}/playwright-browsers</string>
     </dict>
     <key>StartCalendarInterval</key>
     <array>
@@ -119,7 +119,7 @@ NEXT_MORNING_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PLAYWRIGHT_BROWSERS_PATH</key>
-        <string>/Users/gregchew/pokernow/playwright-browsers</string>
+        <string>{working_dir}/playwright-browsers</string>
     </dict>
     <key>StartCalendarInterval</key>
     <array>

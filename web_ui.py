@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 
 PORT = 8080
-WORKING_DIR = "/Users/gregchew/pokernow"
+WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Thread-safe status trackers for running subprocesses
 status_lock = threading.Lock()
@@ -243,7 +243,7 @@ def triage_logs(a_out, a_err, s_out, s_err):
                 "title": "Google Calendar Authentication Failed",
                 "explanation": "The announcer script could not authenticate with the Google Calendar API.",
                 "steps": [
-                    "Ensure that calendar_credentials.json is present in the root folder /Users/gregchew/pokernow.",
+                    f"Ensure that calendar_credentials.json is present in the root folder {WORKING_DIR}.",
                     "Verify the CALENDAR_ID in your .env file matches the shared calendar's settings."
                 ]
             }

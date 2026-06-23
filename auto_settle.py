@@ -89,13 +89,17 @@ def load_env():
                         os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
 def sync_to_google_drive():
-    drive_path = "/Users/gregchew/Library/CloudStorage/GoogleDrive-gregchew@gmail.com/My Drive/pokernow"
+    working_dir = os.path.dirname(os.path.abspath(__file__))
+    drive_path = os.environ.get("GOOGLE_DRIVE_PATH")
+    if not drive_path:
+        print("Skipping Google Drive backup: GOOGLE_DRIVE_PATH not set in environment.")
+        return
     if not os.path.exists(drive_path):
         print(f"Skipping Google Drive backup: path {drive_path} does not exist.")
         return
     
     print("\nBacking up files to Google Drive...")
-    src = "/Users/gregchew/pokernow/"
+    src = working_dir + "/"
     cmd = [
         "rsync", "-av", "--delete",
         "--exclude=chrome-profile",
