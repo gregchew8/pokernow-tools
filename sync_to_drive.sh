@@ -1,9 +1,16 @@
 #!/bin/bash
 # Sync local changes back to Google Drive
 
-# Load .env variables to get GOOGLE_DRIVE_PATH
+# Load .env variables line-by-line to safely handle spaces and quotes
 if [ -f .env ]; then
-  export $(grep -v '^#' .env | xargs)
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Ignore comments and empty lines
+    if [[ ! "$line" =~ ^# ]] && [[ "$line" =~ = ]]; then
+      key=$(echo "$line" | cut -d= -f1 | xargs)
+      val=$(echo "$line" | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+      export "$key"="$val"
+    fi
+  done < .env
 fi
 
 if [ -z "$GOOGLE_DRIVE_PATH" ]; then
