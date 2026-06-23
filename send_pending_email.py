@@ -67,7 +67,7 @@ def main():
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = f"LCR Admins <{receiver}>"
+    msg['From'] = f"LCR Admins <{sender}>"
     msg['To'] = receiver
 
     if text_content:

@@ -368,8 +368,7 @@ def main():
 
     # New validation check for sum in player_cashouts
     if sum(cashouts) != 0:
-        print(f"Error: The total sum of cashouts is {sum(cashouts)}, but it should be 0.")
-        return
+        sys.exit(f"Error: The total sum of cashouts is {sum(cashouts)}, but it should be 0. Reconciliation failed.")
 
     settlement = find_best_settlement(settlement_finder, cashouts, args.num_trials)
 

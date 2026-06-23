@@ -20,7 +20,7 @@ def send_email(subject, html_content, text_content):
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = f"LCR Admins <{receiver}>"
+    msg['From'] = f"LCR Admins <{sender}>"
     msg['To'] = receiver
 
     part1 = MIMEText(text_content, 'plain')
