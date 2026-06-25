@@ -16,9 +16,11 @@ def main():
         context = p.chromium.launch_persistent_context(
             user_data_dir="./chrome-profile",
             headless=False,
+            channel="chrome",
             ignore_default_args=["--enable-automation"],
             args=["--disable-blink-features=AutomationControlled"]
         )
+        context.add_init_script("delete navigator.__proto__.webdriver;")
         page = context.new_page()
         page.goto("https://www.pokernow.com")
         

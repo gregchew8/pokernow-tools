@@ -85,10 +85,12 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
     context = playwright.chromium.launch_persistent_context(
         user_data_dir="./chrome-profile",
         headless=headless,
+        channel="chrome",
         user_agent=user_agent,
         ignore_default_args=["--enable-automation"],
         args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
     )
+    context.add_init_script("delete navigator.__proto__.webdriver;")
     
     urls = []
     admin_tokens = []
