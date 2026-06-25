@@ -88,7 +88,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         channel="chrome",
         user_agent=user_agent,
         ignore_default_args=["--enable-automation"],
-        args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+        args=["--disable-blink-features=AutomationControlled"]
     )
     context.add_init_script("delete navigator.__proto__.webdriver;")
     
