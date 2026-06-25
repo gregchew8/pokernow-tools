@@ -482,6 +482,30 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/kill-task":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            success = False
+            try:
+                payload = json.loads(post_data.decode("utf-8"))
+                task_name = payload.get("task")
+                if task_name in ["announcer", "settlement"]:
+                    script_name = "announce_games.py" if task_name == "announcer" else "auto_settle.py"
+                    import subprocess
+                    # Terminate the running script
+                    subprocess.run(["pkill", "-f", script_name])
+                    # Terminate any Chrome instances tied to the profile
+                    subprocess.run(["pkill", "-f", "chrome-profile"])
+                    
+                    with status_lock:
+                        running_tasks[task_name] = False
+                    success = True
+            except Exception as e:
+                print(f"[WebUI] Error killing task: {e}")
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -1048,7 +1072,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <input type="checkbox" id="chk-announcer-draft" style="cursor: pointer;">
                     <label for="chk-announcer-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
                 </div>
-                <button id="btn-announcer" class="btn" onclick="triggerTask('announcer')">Start Table Setup</button>
+                <div style="display: flex; gap: 0.5rem; width: 100%;">
+                    <button id="btn-announcer" class="btn" style="flex: 1;" onclick="triggerTask('announcer')">Start Table Setup</button>
+                    <button id="btn-kill-announcer" class="btn" style="background: var(--danger); display: none; margin: 0; padding: 0 1rem; width: auto;" onclick="killTask('announcer')" title="Stop running task">Stop</button>
+                </div>
             </div>
 
             <!-- Settlement Card -->
@@ -1062,7 +1089,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <input type="checkbox" id="chk-settlement-draft" style="cursor: pointer;">
                     <label for="chk-settlement-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
                 </div>
-                <button id="btn-settlement" class="btn" onclick="triggerTask('settlement')">Run Manual Settlement</button>
+                <div style="display: flex; gap: 0.5rem; width: 100%;">
+                    <button id="btn-settlement" class="btn" style="flex: 1;" onclick="triggerTask('settlement')">Run Manual Settlement</button>
+                    <button id="btn-kill-settlement" class="btn" style="background: var(--danger); display: none; margin: 0; padding: 0 1rem; width: auto;" onclick="killTask('settlement')" title="Stop running task">Stop</button>
+                </div>
             </div>
 
             <!-- Active Games Card -->
@@ -1207,31 +1237,37 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     // Update Announcer Status
                     const announcerBadge = document.getElementById('announcer-badge');
                     const btnAnnouncer = document.getElementById('btn-announcer');
+                    const btnKillAnnouncer = document.getElementById('btn-kill-announcer');
                     if (data.announcer_running) {
                         announcerBadge.textContent = 'Running';
                         announcerBadge.className = 'status-badge status-running';
                         btnAnnouncer.disabled = true;
                         btnAnnouncer.textContent = 'Setting up Tables...';
+                        btnKillAnnouncer.style.display = 'block';
                     } else {
                         announcerBadge.textContent = 'Idle';
                         announcerBadge.className = 'status-badge status-idle';
                         btnAnnouncer.disabled = data.settlement_running;
                         btnAnnouncer.textContent = 'Start Table Setup';
+                        btnKillAnnouncer.style.display = 'none';
                     }
 
                     // Update Settlement Status
                     const settlementBadge = document.getElementById('settlement-badge');
                     const btnSettlement = document.getElementById('btn-settlement');
+                    const btnKillSettlement = document.getElementById('btn-kill-settlement');
                     if (data.settlement_running) {
                         settlementBadge.textContent = 'Running';
                         settlementBadge.className = 'status-badge status-running';
                         btnSettlement.disabled = true;
                         btnSettlement.textContent = 'Calculating Payouts...';
+                        btnKillSettlement.style.display = 'block';
                     } else {
                         settlementBadge.textContent = 'Idle';
                         settlementBadge.className = 'status-badge status-idle';
                         btnSettlement.disabled = data.announcer_running;
                         btnSettlement.textContent = 'Run Manual Settlement';
+                        btnKillSettlement.style.display = 'none';
                     }
 
                     // Update Logs
@@ -1738,6 +1774,27 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     alert("Error discarding email: " + err);
                     updateDashboard();
                 });
+        }
+
+        function killTask(taskName) {
+            if (!confirm(`Are you sure you want to stop/kill the running ${taskName} task?`)) return;
+            fetch('/api/kill-task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task: taskName })
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert(`The ${taskName} task has been stopped.`);
+                } else {
+                    alert(`Failed to stop the ${taskName} task.`);
+                }
+                updateDashboard();
+            })
+            .catch(err => {
+                alert("Error stopping task: " + err);
+                updateDashboard();
+            });
         }
 
         // Periodically refresh dashboard every 2 seconds
