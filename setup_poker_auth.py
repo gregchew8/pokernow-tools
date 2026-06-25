@@ -86,6 +86,7 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         user_data_dir="./chrome-profile",
         headless=headless,
         user_agent=user_agent,
+        ignore_default_args=["--enable-automation"],
         args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
     )
     

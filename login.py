@@ -16,6 +16,7 @@ def main():
         context = p.chromium.launch_persistent_context(
             user_data_dir="./chrome-profile",
             headless=False,
+            ignore_default_args=["--enable-automation"],
             args=["--disable-blink-features=AutomationControlled"]
         )
         page = context.new_page()
