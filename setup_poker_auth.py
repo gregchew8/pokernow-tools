@@ -142,7 +142,30 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
             page.wait_for_url("**/games/*", timeout=25000)
             page.wait_for_timeout(random.randint(1500, 3000)) # Breather for UI hydration
         except Exception as e:
-            raise RuntimeError(f"Failed to create/load game room. URL did not redirect to a game path. Currently at: {page.url}")
+            # Check if there is a Cloudflare Turnstile challenge visible
+            turnstile_iframe = None
+            for frame in page.frames:
+                if "challenges.cloudflare.com" in frame.url:
+                    turnstile_iframe = frame
+                    break
+            
+            page_content_lower = ""
+            try:
+                page_content_lower = page.content().lower()
+            except:
+                pass
+
+            if turnstile_iframe or "cloudflare" in page_content_lower or "turnstile" in page_content_lower or "challenge" in page_content_lower:
+                print("\n⚠️ [WARNING] Cloudflare Turnstile challenge or verification page detected!")
+                print("Please check the open browser window and click/solve the challenge.")
+                print("Waiting up to 5 minutes for you to complete it...\n")
+                try:
+                    page.wait_for_url("**/games/*", timeout=300000)
+                    page.wait_for_timeout(random.randint(1500, 3000))
+                except Exception as inner_e:
+                    raise RuntimeError(f"Cloudflare Turnstile challenge was not solved in time. Currently at: {page.url}")
+            else:
+                raise RuntimeError(f"Failed to create/load game room. URL did not redirect to a game path. Currently at: {page.url}")
         
         # Options & Configurations (use exact=False to avoid icon rendering/matching issues in CI)
         options_btn = page.get_by_role("button", name="Options", exact=False)
