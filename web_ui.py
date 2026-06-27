@@ -99,6 +99,201 @@ def parse_last_timestamp(content, marker):
     except:
         return None
 
+ACKNOWLEDGED_ERRORS_FILE = os.path.join(WORKING_DIR, "data/acknowledged_errors.json")
+
+def load_acknowledged_errors():
+    if os.path.exists(ACKNOWLEDGED_ERRORS_FILE):
+        try:
+            with open(ACKNOWLEDGED_ERRORS_FILE, "r") as f:
+                return set(json.load(f))
+        except:
+            return set()
+    return set()
+
+def save_acknowledged_error(error_id):
+    acknowledged = load_acknowledged_errors()
+    acknowledged.add(error_id)
+    os.makedirs(os.path.dirname(ACKNOWLEDGED_ERRORS_FILE), exist_ok=True)
+    try:
+        with open(ACKNOWLEDGED_ERRORS_FILE, "w") as f:
+            json.dump(list(acknowledged), f)
+        return True
+    except Exception as e:
+        print(f"[WebUI] Error saving acknowledged error: {e}")
+        return False
+
+def triage_single_error(source, out_content, err_content):
+    import re
+    combined = (out_content + "\n" + err_content).lower()
+    if source == "settlement":
+        nickname_match = re.search(r"player with nickname '([^']+)' not found", combined)
+        if nickname_match:
+            nickname = nickname_match.group(1)
+            return {
+                "title": "Missing Player Payment Mapping",
+                "explanation": f"The settlement engine failed because a player with the nickname '{nickname}' is not registered in your player database.",
+                "steps": [
+                    "Open your player database Google Sheet.",
+                    f"Add a new row mapping nickname <span class='copyable-badge' onclick='copyTextToClipboard(\"{nickname}\")' title='Click to copy nickname'>{nickname} 📋</span> to their Venmo handle.",
+                    "Wait 5 seconds for Google Drive sync, then click 'Run Manual Settlement' again."
+                ]
+            }
+        if "smtpauthenticationerror" in combined:
+            return {
+                "title": "Email Authentication (SMTP) Failed (Settlement)",
+                "explanation": "The email notification script could not log into your Gmail account during settlement. This is usually due to an incorrect or revoked Google App Password.",
+                "steps": [
+                    "Verify that EMAIL_SENDER is set correctly in your .env file.",
+                    "Generate a new Google App Password from your Google Account security settings.",
+                    "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password."
+                ]
+            }
+        return {
+            "title": "Settlement Execution Crash",
+            "explanation": "The morning settlement task encountered an unexpected Python exception.",
+            "steps": [
+                "Review the Settlement Errors log below for the full traceback.",
+                "Verify that your input data files (like payment_info.csv or local data files) are not corrupted."
+            ]
+        }
+    else: # announcer
+        if "smtpauthenticationerror" in combined:
+            return {
+                "title": "Email Authentication (SMTP) Failed (Announcer)",
+                "explanation": "The email notification script could not log into your Gmail account during table announcements. This is usually due to an incorrect or revoked Google App Password.",
+                "steps": [
+                    "Verify that EMAIL_SENDER is set correctly in your .env file.",
+                    "Generate a new Google App Password from your Google Account security settings.",
+                    "Update EMAIL_PASSWORD in your local .env file with the new 16-character App Password."
+                ]
+            }
+        if "executable doesn't exist" in combined or "looks like playwright was just installed" in combined:
+            return {
+                "title": "Playwright Browser Executable Missing",
+                "explanation": "The automated browser binary was deleted or is missing from the local cache.",
+                "steps": [
+                    "Open a terminal on your Mac Mini.",
+                    "Run the following command to reinstall Chromium to the persistent directory:",
+                    "  PLAYWRIGHT_BROWSERS_PATH=./playwright-browsers python3 -m playwright install chromium"
+                ]
+            }
+        if "timeout 25000ms exceeded" in combined or "failed to create/load game room" in combined or "targetclosederror" in combined:
+            return {
+                "title": "Poker Now Creation Timeout (Possible Anti-Bot Block)",
+                "explanation": "The script timed out while waiting for Poker Now to create the table. This usually means the browser was blocked by a Cloudflare Turnstile captcha or your session has expired.",
+                "steps": [
+                    "Open a terminal on the Mac Mini.",
+                    "Run 'python3 login.py' to launch a headed browser.",
+                    "Log into Poker Now again in the visible browser window, then press ENTER in the terminal to save your login session."
+                ]
+            }
+        if "google.auth.exceptions" in combined or "calendar_credentials.json" in combined:
+            return {
+                "title": "Google Calendar Authentication Failed",
+                "explanation": "The announcer script could not authenticate with the Google Calendar API.",
+                "steps": [
+                    "Ensure that calendar_credentials.json is present in the root folder.",
+                    "Verify the CALENDAR_ID in your .env file matches the shared calendar's settings."
+                ]
+            }
+        return {
+            "title": "Game Announcer Execution Crash",
+            "explanation": "The table creation task encountered an unexpected Python exception.",
+            "steps": [
+                "Review the Announcer Errors log below for the full traceback.",
+                "Verify that schedule.json has correct syntax and formats."
+            ]
+        }
+
+def parse_all_errors_from_logs(source):
+    import re
+    import datetime
+    if source == "announcer":
+        stderr_path = os.path.join(WORKING_DIR, "output/game_nights_stderr.log")
+        stdout_path = os.path.join(WORKING_DIR, "output/game_nights_stdout.log")
+    else:
+        stderr_path = os.path.join(WORKING_DIR, "output/next_morning_stderr.log")
+        stdout_path = os.path.join(WORKING_DIR, "output/next_morning_stdout.log")
+
+    if not os.path.exists(stderr_path):
+        return []
+    try:
+        with open(stderr_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except:
+        return []
+
+    errors = []
+    pattern = r"=== Error Occurred:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*==="
+    matches = list(re.finditer(pattern, content))
+
+    stdout_content = ""
+    if os.path.exists(stdout_path):
+        try:
+            with open(stdout_path, "r", encoding="utf-8") as sf:
+                stdout_content = sf.read()
+        except:
+            pass
+
+    for i, m in enumerate(matches):
+        ts_str = m.group(1)
+        start_idx = m.end()
+        end_idx = matches[i+1].start() if i + 1 < len(matches) else len(content)
+        err_chunk = content[start_idx:end_idx].strip()
+
+        stdout_chunk = ""
+        if stdout_content:
+            start_pattern = r"=== Execution Started:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*==="
+            start_matches = list(re.finditer(start_pattern, stdout_content))
+            best_match = None
+            for sm in start_matches:
+                if sm.group(1) == ts_str:
+                    best_match = sm
+                    break
+            if not best_match and start_matches:
+                try:
+                    err_dt = datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                    best_diff = None
+                    for sm in start_matches:
+                        sm_dt = datetime.datetime.strptime(sm.group(1), "%Y-%m-%d %H:%M:%S")
+                        if sm_dt <= err_dt:
+                            diff = (err_dt - sm_dt).total_seconds()
+                            if best_diff is None or diff < best_diff:
+                                best_diff = diff
+                                best_match = sm
+                except:
+                    pass
+            if best_match:
+                sm_idx = start_matches.index(best_match)
+                st_start = best_match.end()
+                st_end = start_matches[sm_idx+1].start() if sm_idx + 1 < len(start_matches) else len(stdout_content)
+                stdout_chunk = stdout_content[st_start:st_end].strip()
+
+        diag = triage_single_error(source, stdout_chunk, err_chunk)
+        errors.append({
+            "id": f"{source}-{ts_str.replace(' ', '_').replace(':', '_')}",
+            "timestamp": ts_str,
+            "source": source,
+            "title": diag["title"],
+            "explanation": diag["explanation"],
+            "steps": diag["steps"]
+        })
+    return errors
+
+def get_recent_errors_history():
+    all_errors = parse_all_errors_from_logs("announcer") + parse_all_errors_from_logs("settlement")
+    import datetime
+    def parse_dt(x):
+        try:
+            return datetime.datetime.strptime(x["timestamp"], "%Y-%m-%d %H:%M:%S")
+        except:
+            return datetime.datetime.min
+    all_errors.sort(key=parse_dt, reverse=True)
+    acknowledged = load_acknowledged_errors()
+    for err in all_errors:
+        err["acknowledged"] = err["id"] in acknowledged
+    return all_errors[:3]
+
 def triage_logs(a_out, a_err, s_out, s_err):
     import datetime
     
@@ -170,8 +365,8 @@ def triage_logs(a_out, a_err, s_out, s_err):
                 "title": "Missing Player Payment Mapping",
                 "explanation": f"The settlement engine failed because a player with the nickname '{nickname}' is not registered in your player database.",
                 "steps": [
-                    f"Open your player database Google Sheet.",
-                    f"Add a new row mapping nickname '{nickname}' to their Venmo handle.",
+                    "Open your player database Google Sheet.",
+                    f"Add a new row mapping nickname <span class='copyable-badge' onclick='copyTextToClipboard(\"{nickname}\")' title='Click to copy nickname'>{nickname} 📋</span> to their Venmo handle.",
                     "Wait 5 seconds for Google Drive sync, then click 'Run Manual Settlement' again."
                 ]
             }
@@ -324,6 +519,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     if not s_start or s_error >= s_start:
                         s_err_current = True
 
+                # Determine active diagnosis timestamp
+                diag_ts = None
+                if diagnosis.get("status") == "success":
+                    if "settlement" in diagnosis.get("title", "").lower():
+                        diag_ts = s_start
+                    else:
+                        diag_ts = a_start
+                elif diagnosis.get("status") == "error":
+                    diag_ts = a_error if a_err_current else (s_error if s_err_current else (a_error or s_error))
+                
+                diagnosis["timestamp"] = diag_ts.strftime("%Y-%m-%d %H:%M:%S") if diag_ts else None
+
+                # Determine active error ID and acknowledgment status
+                active_id = None
+                if diagnosis.get("status") == "error" and diagnosis.get("timestamp"):
+                    source_str = "announcer" if (a_err_current or (a_error and not s_error) or (a_error and s_error and a_error > s_error)) else "settlement"
+                    ts_normalized = diagnosis["timestamp"].replace(" ", "_").replace(":", "_")
+                    active_id = f"{source_str}-{ts_normalized}"
+                
+                acknowledged = load_acknowledged_errors()
+                diagnosis["id"] = active_id
+                diagnosis["acknowledged"] = (active_id in acknowledged) if active_id else False
+
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
@@ -340,7 +558,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "settlement_error_time": s_error.strftime("%Y-%m-%d %H:%M:%S") if s_error else None,
                     "settlement_error_is_current": s_err_current,
                     "server_time": datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p"),
-                    "pending_email": pending_email
+                    "pending_email": pending_email,
+                    "errors_history": get_recent_errors_history()
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         elif self.path == "/api/schedule":
@@ -506,6 +725,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/acknowledge-error":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            success = False
+            try:
+                payload = json.loads(post_data.decode("utf-8"))
+                error_id = payload.get("id")
+                if error_id:
+                    success = save_acknowledged_error(error_id)
+            except Exception as e:
+                print(f"[WebUI] Error acknowledging error: {e}")
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -609,6 +843,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
             transform: translateY(-2px);
             box-shadow: var(--glow);
             border-color: rgba(79, 70, 229, 0.3);
+        }
+
+        .copyable-badge {
+            background: rgba(79, 70, 229, 0.2);
+            border: 1px solid rgba(79, 70, 229, 0.4);
+            color: #a5b4fc;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            font-family: monospace;
+            cursor: pointer;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .copyable-badge:hover {
+            background: rgba(79, 70, 229, 0.4);
+            border-color: rgba(79, 70, 229, 0.6);
         }
 
         h2 {
@@ -1050,14 +1303,33 @@ class WebUIHandler(BaseHTTPRequestHandler):
         <div class="dashboard-grid">
             <!-- Diagnostic Card -->
             <div id="diagnostic-card" class="card full-width" style="display: none;">
-                <h2 id="diag-title" style="display: flex; align-items: center; gap: 0.5rem;">
-                    Diagnostic Advisor
+                <h2 id="diag-title" style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; width: 100%;">
+                    <span>Diagnostic Advisor</span>
                 </h2>
-                <p id="diag-explanation" style="margin-bottom: 1rem; line-height: 1.5; font-size: 0.95rem;"></p>
-                <div id="diag-steps-container" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Recommended Steps to Resolve:</div>
-                    <ul id="diag-steps" style="list-style-position: inside; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; line-height: 1.4;">
-                    </ul>
+                
+                <!-- Active Diagnosis / Current Status -->
+                <div id="diag-active-container" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.15);">
+                    <div id="diag-active-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                        <span id="diag-active-status" style="font-weight: 700; font-size: 1.05rem;">Checking system logs...</span>
+                        <span id="diag-active-meta" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                    </div>
+                    <p id="diag-explanation" style="margin-bottom: 1rem; line-height: 1.5; font-size: 0.95rem;"></p>
+                    <div id="diag-steps-container" style="background: rgba(0,0,0,0.25); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Recommended Steps to Resolve:</div>
+                        <ul id="diag-steps" style="list-style-position: inside; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; line-height: 1.4;">
+                        </ul>
+                    </div>
+                    <div id="diag-active-action-container" style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+                        <button id="btn-acknowledge-active" class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; margin: 0; background: var(--primary);" onclick="">Acknowledge Issue</button>
+                    </div>
+                </div>
+
+                <!-- Diagnostics History -->
+                <div id="diag-history-container" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1.25rem;">
+                    <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem; font-weight: 600;">Recent Diagnostic History (Last 3 runs):</div>
+                    <div id="diag-history-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <!-- Filled by JS -->
+                    </div>
                 </div>
             </div>
 
@@ -1203,33 +1475,186 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 .then(data => {
                     // Update Diagnosis Card
                     const diagCard = document.getElementById('diagnostic-card');
-                    if (data.diagnosis && data.diagnosis.status !== 'info') {
+                    const hasHistory = data.errors_history && data.errors_history.length > 0;
+                    
+                    if ((data.diagnosis && data.diagnosis.status !== 'info') || hasHistory) {
                         diagCard.style.display = 'block';
                         
-                        const diagTitle = document.getElementById('diag-title');
+                        const diagActiveContainer = document.getElementById('diag-active-container');
+                        const diagActiveStatus = document.getElementById('diag-active-status');
+                        const diagActiveMeta = document.getElementById('diag-active-meta');
                         const diagExplanation = document.getElementById('diag-explanation');
+                        const diagStepsContainer = document.getElementById('diag-steps-container');
                         const diagSteps = document.getElementById('diag-steps');
+                        const btnAckActive = document.getElementById('btn-acknowledge-active');
+                        const actActionContainer = document.getElementById('diag-active-action-container');
                         
-                        diagExplanation.textContent = data.diagnosis.explanation;
-                        
-                        // Set colors and titles based on status
-                        if (data.diagnosis.status === 'error') {
-                            diagTitle.innerHTML = `⚠️ Diagnostic Advisor: <span style="color: var(--danger); font-weight: 800;">${data.diagnosis.title}</span>`;
-                            diagCard.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-                            diagCard.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.15)';
-                        } else if (data.diagnosis.status === 'success') {
-                            diagTitle.innerHTML = `✅ Diagnostic Advisor: <span style="color: var(--success); font-weight: 800;">${data.diagnosis.title}</span>`;
-                            diagCard.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-                            diagCard.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.15)';
+                        const diagTitle = document.getElementById('diag-title');
+                        if (data.diagnosis && data.diagnosis.status !== 'info' && data.diagnosis.timestamp) {
+                            diagTitle.innerHTML = `<span>Diagnostic Advisor <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: normal; margin-left: 0.5rem;">(${data.diagnosis.timestamp})</span></span>`;
+                        } else {
+                            diagTitle.innerHTML = `<span>Diagnostic Advisor</span>`;
+                        }
+
+                        // Active diagnosis update
+                        if (data.diagnosis && data.diagnosis.status !== 'info') {
+                            diagActiveContainer.style.display = 'block';
+                            diagExplanation.textContent = data.diagnosis.explanation;
+                            
+                            if (data.diagnosis.status === 'error') {
+                                if (data.diagnosis.acknowledged) {
+                                    diagActiveStatus.innerHTML = `⚠️ Active Issue Acknowledged: <span style="color: var(--success); font-weight: 800;">${data.diagnosis.title}</span>`;
+                                    diagActiveMeta.textContent = `Timestamp: ${data.diagnosis.timestamp || 'N/A'}`;
+                                    diagCard.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                                    diagCard.style.boxShadow = '0 0 15px rgba(16, 185, 129, 0.05)';
+                                    diagActiveContainer.style.background = 'rgba(16, 185, 129, 0.03)';
+                                    diagActiveContainer.style.borderColor = 'rgba(16, 185, 129, 0.1)';
+                                    actActionContainer.style.display = 'none';
+                                } else {
+                                    diagActiveStatus.innerHTML = `⚠️ Active Issue: <span style="color: var(--danger); font-weight: 800;">${data.diagnosis.title}</span>`;
+                                    diagActiveMeta.textContent = `Timestamp: ${data.diagnosis.timestamp || 'N/A'}`;
+                                    diagCard.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                                    diagCard.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.15)';
+                                    diagActiveContainer.style.background = 'rgba(239, 68, 68, 0.03)';
+                                    diagActiveContainer.style.borderColor = 'rgba(239, 68, 68, 0.1)';
+                                    actActionContainer.style.display = 'flex';
+                                    btnAckActive.textContent = 'Acknowledge Issue';
+                                    btnAckActive.onclick = () => acknowledgeError(data.diagnosis.id);
+                                }
+                                diagStepsContainer.style.display = 'block';
+                            } else if (data.diagnosis.status === 'success') {
+                                diagActiveStatus.innerHTML = `✅ System Status: <span style="color: var(--success); font-weight: 800;">${data.diagnosis.title}</span>`;
+                                diagActiveMeta.textContent = data.diagnosis.timestamp ? `Last Run: ${data.diagnosis.timestamp}` : '';
+                                diagCard.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                                diagCard.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.15)';
+                                diagActiveContainer.style.background = 'rgba(16, 185, 129, 0.03)';
+                                diagActiveContainer.style.borderColor = 'rgba(16, 185, 129, 0.1)';
+                                diagStepsContainer.style.display = 'none';
+                                actActionContainer.style.display = 'none';
+                            }
+                            
+                            // Populate steps
+                            diagSteps.innerHTML = '';
+                            if (data.diagnosis.steps) {
+                                data.diagnosis.steps.forEach(step => {
+                                    const li = document.createElement('li');
+                                    li.innerHTML = step;
+                                    diagSteps.appendChild(li);
+                                });
+                            }
+                        } else {
+                            diagActiveContainer.style.display = 'none';
+                            diagCard.style.borderColor = 'var(--border-color)';
+                            diagCard.style.boxShadow = 'none';
                         }
                         
-                        // Populate steps
-                        diagSteps.innerHTML = '';
-                        data.diagnosis.steps.forEach(step => {
-                            const li = document.createElement('li');
-                            li.textContent = step;
-                            diagSteps.appendChild(li);
-                        });
+                        // History list update
+                        const historyContainer = document.getElementById('diag-history-container');
+                        const historyList = document.getElementById('diag-history-list');
+                        historyList.innerHTML = '';
+                        if (hasHistory) {
+                            historyContainer.style.display = 'block';
+                            data.errors_history.forEach(err => {
+                                const div = document.createElement('div');
+                                div.className = 'history-item';
+                                div.style.background = 'rgba(255,255,255,0.015)';
+                                div.style.border = '1px solid rgba(255,255,255,0.04)';
+                                div.style.padding = '0.75rem';
+                                div.style.borderRadius = '8px';
+                                div.style.display = 'flex';
+                                div.style.flexDirection = 'column';
+                                div.style.gap = '0.35rem';
+                                
+                                const headerDiv = document.createElement('div');
+                                headerDiv.style.display = 'flex';
+                                headerDiv.style.justifyContent = 'space-between';
+                                headerDiv.style.alignItems = 'center';
+                                headerDiv.style.width = '100%';
+                                
+                                const metaSpan = document.createElement('span');
+                                metaSpan.style.fontSize = '0.78rem';
+                                metaSpan.style.color = 'var(--text-muted)';
+                                metaSpan.style.fontWeight = '600';
+                                metaSpan.textContent = `📅 ${err.timestamp} • ${err.source.toUpperCase()}`;
+                                headerDiv.appendChild(metaSpan);
+                                
+                                if (err.acknowledged) {
+                                    const ackSpan = document.createElement('span');
+                                    ackSpan.style.fontSize = '0.75rem';
+                                    ackSpan.style.color = 'var(--success)';
+                                    ackSpan.style.fontWeight = '700';
+                                    ackSpan.textContent = '✓ Acknowledged';
+                                    headerDiv.appendChild(ackSpan);
+                                } else {
+                                    const ackBtn = document.createElement('button');
+                                    ackBtn.className = 'btn-action';
+                                    ackBtn.style.fontSize = '0.72rem';
+                                    ackBtn.style.padding = '0.2rem 0.5rem';
+                                    ackBtn.style.margin = '0';
+                                    ackBtn.style.background = 'var(--primary)';
+                                    ackBtn.style.cursor = 'pointer';
+                                    ackBtn.textContent = 'Acknowledge';
+                                    ackBtn.onclick = (e) => {
+                                        e.stopPropagation();
+                                        acknowledgeError(err.id);
+                                    };
+                                    headerDiv.appendChild(ackBtn);
+                                }
+                                div.appendChild(headerDiv);
+                                
+                                const titleDiv = document.createElement('div');
+                                titleDiv.style.fontSize = '0.88rem';
+                                titleDiv.style.fontWeight = '700';
+                                titleDiv.style.color = err.acknowledged ? 'var(--text-muted)' : '#fff';
+                                titleDiv.style.cursor = 'pointer';
+                                titleDiv.title = 'Click to show/hide details';
+                                titleDiv.textContent = `⚠️ ${err.title}`;
+                                div.appendChild(titleDiv);
+                                
+                                const expDiv = document.createElement('div');
+                                expDiv.style.fontSize = '0.82rem';
+                                expDiv.style.color = 'var(--text-muted)';
+                                expDiv.textContent = err.explanation;
+                                div.appendChild(expDiv);
+                                
+                                const stepsSubContainer = document.createElement('div');
+                                stepsSubContainer.style.display = 'none';
+                                stepsSubContainer.style.marginTop = '0.5rem';
+                                stepsSubContainer.style.background = 'rgba(0,0,0,0.2)';
+                                stepsSubContainer.style.padding = '0.5rem';
+                                stepsSubContainer.style.borderRadius = '6px';
+                                stepsSubContainer.style.border = '1px solid rgba(255,255,255,0.03)';
+                                
+                                const stepsTitle = document.createElement('div');
+                                stepsTitle.style.fontSize = '0.72rem';
+                                stepsTitle.style.fontWeight = '600';
+                                stepsTitle.style.color = 'var(--text-muted)';
+                                stepsTitle.style.marginBottom = '0.25rem';
+                                stepsTitle.textContent = 'STEPS TO RESOLVE:';
+                                stepsSubContainer.appendChild(stepsTitle);
+                                
+                                const ul = document.createElement('ul');
+                                ul.style.listStyleType = 'none';
+                                ul.style.paddingLeft = '0';
+                                err.steps.forEach(step => {
+                                    const li = document.createElement('li');
+                                    li.style.fontSize = '0.78rem';
+                                    li.style.color = 'var(--text-muted)';
+                                    li.innerHTML = `• ${step}`;
+                                    ul.appendChild(li);
+                                });
+                                stepsSubContainer.appendChild(ul);
+                                div.appendChild(stepsSubContainer);
+                                
+                                titleDiv.onclick = () => {
+                                    stepsSubContainer.style.display = stepsSubContainer.style.display === 'none' ? 'block' : 'none';
+                                };
+                                
+                                historyList.appendChild(div);
+                            });
+                        } else {
+                            historyContainer.style.display = 'none';
+                        }
                     } else {
                         diagCard.style.display = 'none';
                     }
@@ -1447,7 +1872,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                             clean = parts[1].split(/[?#]/)[0];
                         }
                     }
-                    if (clean) {
+                    // Strip any trailing formatting/special characters (like > from emails)
+                    clean = clean.replace(/[^a-zA-Z0-9_-]/g, "");
+                    if (clean && clean.startsWith("pgl") && clean.length >= 15) {
                         parsedIds.push(clean);
                     }
                 });
@@ -1795,6 +2222,70 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 alert("Error stopping task: " + err);
                 updateDashboard();
             });
+        }
+
+        function acknowledgeError(errorId) {
+            fetch('/api/acknowledge-error', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: errorId })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    updateDashboard();
+                } else {
+                    alert('Failed to acknowledge error.');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Error acknowledging error.');
+            });
+        }
+
+        function copyTextToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`Copied "${text}" to clipboard!`);
+            }).catch(err => {
+                console.error('Could not copy text: ', err);
+                alert(`Nickname: ${text}`);
+            });
+        }
+
+        function showToast(message) {
+            let toast = document.getElementById('toast-notification');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'toast-notification';
+                toast.style.position = 'fixed';
+                toast.style.bottom = '30px';
+                toast.style.left = '50%';
+                toast.style.transform = 'translateX(-50%)';
+                toast.style.background = 'rgba(16, 185, 129, 0.95)';
+                toast.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+                toast.style.color = '#fff';
+                toast.style.padding = '0.6rem 1.2rem';
+                toast.style.borderRadius = '30px';
+                toast.style.fontSize = '0.85rem';
+                toast.style.fontWeight = '600';
+                toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.4)';
+                toast.style.zIndex = '9999';
+                toast.style.backdropFilter = 'blur(8px)';
+                toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = message;
+            toast.style.display = 'block';
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(-50%) translateY(0)';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(-50%) translateY(10px)';
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                }, 300);
+            }, 2500);
         }
 
         // Periodically refresh dashboard every 2 seconds

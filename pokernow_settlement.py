@@ -349,7 +349,8 @@ def main():
 
     # Step 2: Read payouts and do settlement
     if not download_success and not args.ledgers_path_manual:
-        return
+        import sys
+        sys.exit("Error: Failed to download ledgers and no manual ledgers path was provided.")
     ledgers_path = TMP_LEDGERS_DIR if download_success else args.ledgers_path_manual
     mode = "Auto" if download_success else "Manual"
     print(f"\n{mode} Mode: Using {mode} downloaded ledgers to compute settlement: {ledgers_path}\n")

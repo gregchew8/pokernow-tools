@@ -79,18 +79,111 @@ def copy_to_clipboard(html: str, text: str) -> None:
 
 
 
+def sync_cookies_from_main_profile(target_user_data_dir: str):
+    import shutil
+    import glob
+    
+    chrome_base = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+    profile_dirs = glob.glob(os.path.join(chrome_base, "Default")) + glob.glob(os.path.join(chrome_base, "Profile *"))
+    
+    # Sort profile directories by mtime of their Cookies file or the directory itself
+    def get_mtime(d):
+        cookies_path = os.path.join(d, "Cookies")
+        if os.path.exists(cookies_path):
+            return os.path.getmtime(cookies_path)
+        return os.path.getmtime(d)
+        
+    profile_dirs.sort(key=get_mtime, reverse=True)
+    if not profile_dirs:
+        print("Warning: Could not find any Chrome profiles to sync.")
+        return
+        
+    src_base = profile_dirs[0]
+    print(f"Detected active Chrome profile: {os.path.basename(src_base)}")
+    
+    dest_base = os.path.join(target_user_data_dir, "Default")
+    os.makedirs(dest_base, exist_ok=True)
+    
+    # Copy Cookies
+    src_cookies = os.path.join(src_base, "Cookies")
+    dest_cookies = os.path.join(dest_base, "Cookies")
+    if os.path.exists(src_cookies):
+        try:
+            shutil.copy2(src_cookies, dest_cookies)
+            print("Successfully synced Cookies database.")
+        except Exception as e:
+            print(f"Warning: Could not sync Cookies database: {e}")
+            
+    # Copy Local Storage
+    src_ls = os.path.join(src_base, "Local Storage")
+    dest_ls = os.path.join(dest_base, "Local Storage")
+    if os.path.exists(src_ls):
+        try:
+            if os.path.exists(dest_ls):
+                shutil.rmtree(dest_ls)
+            shutil.copytree(src_ls, dest_ls)
+            print("Successfully synced Local Storage.")
+        except Exception as e:
+            print(f"Warning: Could not sync Local Storage: {e}")
+
+
+def open_new_chrome_tab(port: int, url: str):
+    import urllib.request
+    import urllib.parse
+    try:
+        encoded_url = urllib.parse.quote(url, safe='')
+        endpoint = f"http://localhost:{port}/json/new?{encoded_url}"
+        req = urllib.request.Request(endpoint, method='PUT')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"Error opening new Chrome tab: {e}")
+        return False
+
+
 def run(playwright: Playwright, tables_to_create: list, headless: bool = False) -> None:
-    # Use persistent context to load our saved login session
-    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    context = playwright.chromium.launch_persistent_context(
-        user_data_dir="./chrome-profile",
-        headless=headless,
-        channel="chrome",
-        user_agent=user_agent,
-        ignore_default_args=["--enable-automation"],
-        args=["--disable-blink-features=AutomationControlled"]
-    )
-    context.add_init_script("delete navigator.__proto__.webdriver;")
+    import urllib.request
+    import time
+    
+    user_data_dir = os.path.abspath("./chrome-profile")
+    port = 9228
+    
+    # Clean up any leftover Chrome profiles
+    subprocess.run(["pkill", "-f", "chrome-profile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1)
+    
+    # Sync cookies and session from the user's main Google Chrome profile to local profile
+    sync_cookies_from_main_profile(user_data_dir)
+    
+    chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    # Launch Chrome directly with the target URL as the first argument to avoid immediate CDP detection on load
+    cmd = [
+        chrome_path,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={user_data_dir}",
+        "https://www.pokernow.com/start-game"
+    ]
+    if headless:
+        cmd.append("--headless=new")
+        
+    print(f"Launching Chrome via subprocess: {' '.join(cmd)}")
+    chrome_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Wait for the debugging port to open
+    connected = False
+    for _ in range(50):
+        try:
+            with urllib.request.urlopen(f"http://localhost:{port}/json/version", timeout=1) as response:
+                if response.status == 200:
+                    connected = True
+                    break
+        except Exception:
+            pass
+        time.sleep(0.1)
+        
+    if not connected:
+        raise RuntimeError("Failed to launch Google Chrome with remote debugging port.")
+    print("Chrome successfully launched. Deferring Playwright connection until first table is created...")
     
     urls = []
     admin_tokens = []
@@ -103,6 +196,10 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         "plo8": "plo8"
     }
     
+    browser = None
+    context = None
+    configured_game_ids = set()
+    
     for idx, table_info in enumerate(tables_to_create):
         # Support both 2-tuples and 4-tuples for backward compatibility
         if len(table_info) == 4:
@@ -112,63 +209,69 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
             sb, bb = "0.25", "0.50"
             
         variant_value = variant_map[game_type]
-        print(f"Creating {game_type.upper()} table {table_num} with blinds {sb}/{bb} ({idx+1} of {total_tables})...")
+        print(f"\n============================================================")
+        print(f" TABLE {idx+1} of {total_tables}: {game_type.upper()} ({sb}/{bb})")
+        print(f"============================================================")
         
-        # Reuse the default open tab for the first table, open new tabs for others
-        # Reuse the default open tab for the first table, open new tabs for others
-        if idx == 0 and context.pages:
-            page = context.pages[0]
-        else:
-            page = context.new_page()
+        # 1. Open the start-game page if it is not the first table (which was opened on launch)
+        if idx > 0:
+            print("Opening new tab for next table...")
+            open_new_chrome_tab(port, "https://www.pokernow.com/start-game")
+            time.sleep(2)
             
-        page.goto("https://www.pokernow.com/start-game", timeout=60000, wait_until="domcontentloaded")
-        page.wait_for_timeout(random.randint(1000, 2500)) # Random pause after page load
+        # 2. Instruct the user to solve Turnstile and click Create Game
+        import json
+        print("\n" + "="*60)
+        print(f" ACTION REQUIRED FOR TABLE {idx+1}:")
+        print(" 1. In the Chrome window, click the Turnstile checkbox ('Verify you are human').")
+        print(" 2. Enter a Nickname (e.g. 'Rerun') and click 'Create Game'.")
+        print(" The script will automatically detect the game, connect, and configure it!")
+        print("="*60 + "\n")
         
-        # Enter Nickname (avoid pressing Enter to prevent premature submit)
-        nickname_field = page.get_by_role("textbox", name="Your Nickname")
-        nickname_field.hover()
-        page.wait_for_timeout(random.randint(200, 500))
-        nickname_field.click()
-        page.wait_for_timeout(random.randint(300, 800))
-        
-        # Simulate natural typing
-        nickname_field.type("Rerun", delay=random.randint(100, 250))
-        page.wait_for_timeout(random.randint(600, 1500))
-        
-        create_btn = page.get_by_role("button", name="Create Game")
-        create_btn.hover()
-        page.wait_for_timeout(random.randint(300, 800))
-        create_btn.click()
-        
-        # Wait for the room to load (expect /games/ in the URL)
-        try:
-            page.wait_for_url("**/games/*", timeout=25000)
-            page.wait_for_timeout(random.randint(1500, 3000)) # Breather for UI hydration
-        except Exception as e:
-            # Check if there is a Cloudflare Turnstile challenge visible
-            turnstile_iframe = None
-            for frame in page.frames:
-                if "challenges.cloudflare.com" in frame.url:
-                    turnstile_iframe = frame
-                    break
-            
-            page_content_lower = ""
+        # 3. Poll http://localhost:9228/json to detect the newly created game
+        detected_url = None
+        detected_game_id = None
+        for _ in range(300): # 5 minutes
             try:
-                page_content_lower = page.content().lower()
-            except:
+                with urllib.request.urlopen(f"http://localhost:{port}/json", timeout=2) as response:
+                    if response.status == 200:
+                        tabs = json.loads(response.read().decode("utf-8"))
+                        for tab in tabs:
+                            tab_url = tab.get("url", "")
+                            if "/games/pgl" in tab_url:
+                                # Extract game ID
+                                game_id = tab_url.split("/games/")[1].split("?")[0]
+                                if game_id not in configured_game_ids:
+                                    detected_url = tab_url
+                                    detected_game_id = game_id
+                                    break
+            except Exception:
                 pass
-
-            if turnstile_iframe or "cloudflare" in page_content_lower or "turnstile" in page_content_lower or "challenge" in page_content_lower:
-                print("\n⚠️ [WARNING] Cloudflare Turnstile challenge or verification page detected!")
-                print("Please check the open browser window and click/solve the challenge.")
-                print("Waiting up to 5 minutes for you to complete it...\n")
-                try:
-                    page.wait_for_url("**/games/*", timeout=300000)
-                    page.wait_for_timeout(random.randint(1500, 3000))
-                except Exception as inner_e:
-                    raise RuntimeError(f"Cloudflare Turnstile challenge was not solved in time. Currently at: {page.url}")
-            else:
-                raise RuntimeError(f"Failed to create/load game room. URL did not redirect to a game path. Currently at: {page.url}")
+            if detected_url:
+                break
+            time.sleep(1)
+            
+        if not detected_url:
+            raise RuntimeError(f"Timed out waiting for manual game creation on Table {idx+1}.")
+            
+        print(f"Detected game room: {detected_url}. Connecting Playwright to configure settings...")
+        
+        # 4. Connect Playwright
+        browser = playwright.chromium.connect_over_cdp(f"http://localhost:{port}")
+        context = browser.contexts[0]
+        context.add_init_script("delete navigator.__proto__.webdriver;")
+        
+        # 5. Find the page matching the detected game ID
+        page = None
+        for p in context.pages:
+            if detected_game_id in p.url:
+                page = p
+                break
+        if not page:
+            page = context.pages[0]
+            
+        # 6. Configure the game settings
+        page.wait_for_timeout(2000)
         
         # Options & Configurations (use exact=False to avoid icon rendering/matching issues in CI)
         options_btn = page.get_by_role("button", name="Options", exact=False)
@@ -197,15 +300,13 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         sb_field = page.get_by_role("textbox", name="SB")
         sb_field.hover()
         page.wait_for_timeout(random.randint(200, 500))
-        sb_field.dblclick()
-        page.wait_for_timeout(random.randint(300, 700))
-        sb_field.type(sb, delay=random.randint(80, 200))
+        sb_field.fill(sb)
         page.wait_for_timeout(random.randint(400, 800))
-        sb_field.press("Tab")
-        page.wait_for_timeout(random.randint(300, 700))
         
         bb_field = page.get_by_role("textbox", name="BB")
-        bb_field.type(bb, delay=random.randint(80, 200))
+        bb_field.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        bb_field.fill(bb)
         page.wait_for_timeout(random.randint(600, 1500))
         
         ask_players_btn = page.get_by_role("button", name="Ask Players")
@@ -222,15 +323,15 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         
         # Time settings
         timer1_field = page.get_by_role("textbox").nth(4)
-        timer1_field.click()
+        timer1_field.hover()
         page.wait_for_timeout(random.randint(200, 500))
-        timer1_field.type("60", delay=random.randint(80, 200))
-        page.wait_for_timeout(random.randint(300, 700))
-        timer1_field.press("Tab")
+        timer1_field.fill("60")
         page.wait_for_timeout(random.randint(300, 700))
         
         timer2_field = page.get_by_role("textbox").nth(5)
-        timer2_field.type("60", delay=random.randint(80, 200))
+        timer2_field.hover()
+        page.wait_for_timeout(random.randint(200, 500))
+        timer2_field.fill("6")
         page.wait_for_timeout(random.randint(600, 1500))
         
         # Showdown Presentation Time to FAST (3S)
@@ -267,9 +368,17 @@ def run(playwright: Playwright, tables_to_create: list, headless: bool = False) 
         npt_cookie = next((c["value"] for c in cookies if c["name"] == "npt"), None)
         admin_tokens.append(npt_cookie)
         
-        page.close()
+        # Extract game ID directly from game_url
+        game_id = game_url.split("/games/")[-1].split("?")[0]
+        configured_game_ids.add(game_id)
+        print(f"Table {idx+1} successfully configured!")
         
-    context.close()
+        context.close()
+        browser.close()
+        print("Playwright disconnected. Chrome is now clean for the next table.")
+        
+    chrome_process.terminate()
+    chrome_process.wait()
     
     # Format the plain text representation
     today = datetime.datetime.now()

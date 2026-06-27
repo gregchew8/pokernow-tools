@@ -25,9 +25,13 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
 5. **Remote Web UI Control Panel** (`web_ui.py`)
    - Serves a secure, zero-dependency local dashboard on port `8080` (accessible over Tailscale).
    - Allows triggering announcer and settlement scripts manually with log outputs visible in real time.
-   - **Diagnostic Advisor**: Automatically parses and triages stdout/stderr outputs to identify common issues (e.g., SMTP auth failures, missing Playwright executables, missing player mappings) and displays clear recovery steps.
-   - **Active vs. Stale Log Tracking**: Extracts execution and error timestamps to label error boxes with status badges (`[ACTIVE ERROR]`, `[STALE / RESOLVED]`, or `[SUCCESS]`). Stale/old error panels are dimmed with hover-reveal styling to prevent confusion.
-   - **Clipboard Shortcuts**: Copy buttons next to each console log panel allow for quick sharing/debugging of stack traces.
+    - **Diagnostic Advisor**: Automatically parses and triages stdout/stderr outputs to identify common issues (e.g., SMTP auth failures, missing Playwright executables, missing player mappings) and displays clear recovery steps.
+      - **Timestamps**: Prominently shows active run error/success timestamps directly in the header.
+      - **Diagnostic History & Acknowledgment**: Lists the last 3 historical errors. You can expand their resolution steps or click **Acknowledge** to dismiss active warning glows and track acknowledgment state persistently in `data/acknowledged_errors.json`.
+      - **Interactive Copyable Nicknames**: On player mapping errors, the missing nickname is displayed as a badge (`nickname 📋`) that copies the clean text to your clipboard when clicked, making it quick and easy to add to your spreadsheet.
+      - **Smart URL Parsing**: Reconciliations accept copy-pasted email blocks (e.g. `Table 1 - NLH <https://.../games/pgl...>`), automatically ignoring text prefixes and stripping trailing characters like `>` before download.
+    - **Active vs. Stale Log Tracking**: Extracts execution and error timestamps to label error boxes with status badges (`[ACTIVE ERROR]`, `[STALE / RESOLVED]`, or `[SUCCESS]`). Stale/old error panels are dimmed with hover-reveal styling to prevent confusion.
+    - **Clipboard Shortcuts**: Copy buttons next to each console log panel allow for quick sharing/debugging of stack traces.
 6. **Replication Script** (`sync_to_drive.sh`)
    - Replicates local changes and logs back to your Google Drive backup.
 
