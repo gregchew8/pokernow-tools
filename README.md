@@ -8,11 +8,13 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
 
 ## Tools Overview
 
-1. **Lobby Setup Automation** (`login.py` & `setup_poker_auth.py`)
+1. **Lobby Setup Automation** (`setup_poker_auth.py` & `login.py`)
    - Logs into your Poker Now owner lobby.
-   - Automates the creation and configuration (blinds, variant types, timers, stakes) of multiple cash game tables in parallel.
+   - **Hybrid OS-Level Bypass & Pure JS Injection**: Completely evades Cloudflare Turnstile bot protection by launching a *clean* Chrome instance without Playwright or CDP. 
+   - **Preserves Active Session**: Keeps the original Chrome window open to prevent LevelDB session corruption and guarantee that Game Configurations are accessible as the fully authenticated Room Owner.
+   - **Flawless DOM Traversal**: Uses AppleScript to inject highly advanced, case-insensitive JavaScript DOM traversal directly into the active tab to instantly configure Cents, Blinds, Timers, and toggles, bypassing Poker Now's HTML/CSS text-transform casing and React table structures.
    - Copies ready-to-share links and commands to the clipboard along with an email subject line.
-   - Persists Playwright browser binaries in `./playwright-browsers` to protect against macOS cache cleanups.
+   - (Playwright is preserved only for background automated settlement parsing where Turnstile is not active).
 2. **Automated Scheduler** (`setup_local_scheduler.py`)
    - Configures macOS `launchd` CalendarIntervals to run game setup and settlement calculations automatically.
    - Registers a persistent Web UI dashboard daemon to run on boot.
