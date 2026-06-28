@@ -542,6 +542,18 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 diagnosis["id"] = active_id
                 diagnosis["acknowledged"] = (active_id in acknowledged) if active_id else False
 
+                # Check if schedule is skipped for tonight
+                skip_schedule_tonight = False
+                skip_path = os.path.join(WORKING_DIR, "skip_schedule.txt")
+                if os.path.exists(skip_path):
+                    try:
+                        with open(skip_path, "r") as f:
+                            skip_date = f.read().strip()
+                        if skip_date == datetime.datetime.now().strftime("%Y-%m-%d"):
+                            skip_schedule_tonight = True
+                    except:
+                        pass
+
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
@@ -559,7 +571,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "settlement_error_is_current": s_err_current,
                     "server_time": datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p"),
                     "pending_email": pending_email,
-                    "errors_history": get_recent_errors_history()
+                    "errors_history": get_recent_errors_history(),
+                    "skip_schedule_tonight": skip_schedule_tonight
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
         elif self.path == "/api/schedule":
@@ -586,6 +599,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 try:
                     post_data = self.rfile.read(content_length)
                     payload = json.loads(post_data.decode("utf-8"))
+                    if payload.get("test", False):
+                        cmd += ["--test"]
                     if payload.get("draft", False):
                         cmd += ["--draft"]
                 except Exception as e:
@@ -736,6 +751,27 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     success = save_acknowledged_error(error_id)
             except Exception as e:
                 print(f"[WebUI] Error acknowledging error: {e}")
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/toggle-skip-schedule":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            success = False
+            try:
+                payload = json.loads(post_data.decode("utf-8"))
+                skip_it = payload.get("skip", False)
+                skip_path = os.path.join(WORKING_DIR, "skip_schedule.txt")
+                if skip_it:
+                    with open(skip_path, "w") as f:
+                        f.write(datetime.datetime.now().strftime("%Y-%m-%d"))
+                else:
+                    if os.path.exists(skip_path):
+                        os.remove(skip_path)
+                success = True
+            except Exception as e:
+                print(f"[WebUI] Error toggling skip schedule: {e}")
             self.send_response(200 if success else 400)
             self.send_header("Content-type", "application/json")
             self.end_headers()
@@ -1288,8 +1324,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
             <div id="server-timestamp" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; color: #10b981; margin-top: 0.75rem; text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); font-weight: bold;">Loading system time...</div>
         </header>
 
-        <div id="override-banner" class="banner banner-warning" style="display: none;">
-            ⚠️ Standard schedule is overridden for the night! Ad-hoc games are currently active.
+        <div id="skip-schedule-banner" class="banner banner-warning" style="display: none;">
+            🛑 Automatic schedule run has been manually skipped for tonight!
         </div>
 
         <div id="draft-banner" class="banner banner-info" style="display: none;">
@@ -1340,7 +1376,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <span id="announcer-badge" class="status-badge status-idle">Idle</span>
                 </h2>
                 <p class="subtitle">Launches room creations & sends email announcements based on today's schedule config.</p>
-                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                    <input type="checkbox" id="chk-announcer-test" style="cursor: pointer;">
+                    <label for="chk-announcer-test" style="cursor: pointer;" title="Creates tables on Poker Now but skips email, discord, and calendar sync.">Run in TEST mode (Table creation only, no notifications)</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
                     <input type="checkbox" id="chk-announcer-draft" style="cursor: pointer;">
                     <label for="chk-announcer-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
                 </div>
@@ -1357,9 +1397,21 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <span id="settlement-badge" class="status-badge status-idle">Idle</span>
                 </h2>
                 <p class="subtitle">Manually downloads cashout logs for current tables, runs payouts optimization, and emails results.</p>
-                <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <div style="margin-top: 1rem; margin-bottom: 0.75rem;">
+                    <label for="settlement-desc" style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.2rem; font-weight: 600;">Settlement Description/Date:</label>
+                    <input type="text" id="settlement-desc" class="input-field" placeholder="e.g. 062726" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label for="settlement-games" style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.2rem; font-weight: 600;">Game URLs or IDs (space/comma separated):</label>
+                    <textarea id="settlement-games" class="input-field" placeholder="pgl_... or https://pokernow.club/games/pgl_..." style="width: 100%; box-sizing: border-box; min-height: 70px; resize: vertical; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;"></textarea>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                    <input type="checkbox" id="chk-settlement-test" style="cursor: pointer;">
+                    <label for="chk-settlement-test" style="cursor: pointer;" title="Runs calculations only and prints to logs. No emails/Discord.">Run in TEST mode (Calculations only, no notifications)</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
                     <input type="checkbox" id="chk-settlement-draft" style="cursor: pointer;">
-                    <label for="chk-settlement-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
+                    <label for="chk-settlement-draft" style="cursor: pointer;" title="Creates an email draft in Gmail that you must manually approve here.">Draft email only (requires manual approval)</label>
                 </div>
                 <div style="display: flex; gap: 0.5rem; width: 100%;">
                     <button id="btn-settlement" class="btn" style="flex: 1;" onclick="triggerTask('settlement')">Run Manual Settlement</button>
@@ -1382,6 +1434,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </h2>
                 <div id="schedule-editor" class="collapsible-content">
                     <p class="subtitle" style="margin-bottom: 1.5rem;">Configure standard tables automatically scheduled for weekday runs.</p>
+                    
+                    <div style="background: rgba(239, 68, 68, 0.08); border-left: 4px solid #ef4444; padding: 0.8rem 1rem; border-radius: 4px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <div style="font-weight: 600; color: #f87171; margin-bottom: 0.2rem;">Kill Switch: Skip Scheduled Run Tonight</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">Enable this to cancel the automatic 5:00 PM table creation just for today.</div>
+                        </div>
+                        <div>
+                            <label class="switch" style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                                <input type="checkbox" id="chk-skip-schedule" onchange="toggleSkipSchedule()" style="opacity: 0; width: 0; height: 0;">
+                                <span class="slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3f3f46; transition: .4s; border-radius: 24px;"></span>
+                                <style>
+                                    #chk-skip-schedule:checked + .slider { background-color: #ef4444; }
+                                    #chk-skip-schedule:checked + .slider:before { transform: translateX(20px); }
+                                    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+                                </style>
+                            </label>
+                        </div>
+                    </div>
+
                     <div id="schedule-container" class="schedule-grid">
                         <!-- Loaded dynamically -->
                     </div>
@@ -1399,25 +1470,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </h2>
                 <div id="adhoc-launcher" class="collapsible-content">
                     <p class="subtitle" style="margin-bottom: 1rem;">Configure and start a one-time game session tonight with custom stakes.</p>
-                    <p style="background: rgba(245, 158, 11, 0.08); border-left: 4px solid #fbbf24; padding: 0.8rem 1rem; border-radius: 4px; font-size: 0.9rem; line-height: 1.5; color: #f59e0b; margin-bottom: 1.25rem;"><strong>💡 Note:</strong> Launching an ad-hoc session will override the standard calendar schedule for tonight. Standard automatic runs will be bypassed in favor of these custom configurations.</p>
                     <div class="adhoc-builder">
                         <div id="adhoc-tables-container" class="adhoc-tables">
                             <!-- Rows added dynamically -->
                         </div>
                         <button class="btn-add-game" onclick="addAdhocRow()">+ Add Another Table</button>
-                        
-                        <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">
-                            <input type="checkbox" id="chk-adhoc-acknowledge" onchange="toggleAdhocButton()" style="margin-top: 0.2rem; cursor: pointer;">
-                            <label for="chk-adhoc-acknowledge" style="cursor: pointer; line-height: 1.4;">I acknowledge that launching this ad-hoc session will override the standard schedule for tonight and I explicitly want to proceed.</label>
-                        </div>
 
-                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted);">
                             <input type="checkbox" id="chk-adhoc-draft" style="cursor: pointer;">
                             <label for="chk-adhoc-draft" style="cursor: pointer;">Draft email only (requires manual approval)</label>
                         </div>
 
                         <div class="btn-save-container">
-                            <button id="btn-launch-adhoc" class="btn-action btn-primary" style="padding: 0.7rem 1.5rem;" onclick="launchAdhoc()" disabled>Launch Ad-hoc Session</button>
+                            <button id="btn-launch-adhoc" class="btn-action btn-primary" style="padding: 0.7rem 1.5rem;" onclick="launchAdhoc()">Launch Ad-hoc Session</button>
                         </div>
                     </div>
                 </div>
@@ -1813,12 +1878,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     // Update server timestamp
                     document.getElementById('server-timestamp').textContent = data.server_time || 'Offline';
 
-                    // Update override banner
-                    const overrideBanner = document.getElementById('override-banner');
-                    if (data.last_games && data.last_games.is_adhoc) {
-                        overrideBanner.style.display = 'flex';
+                    // Update skip schedule banner and toggle
+                    const skipBanner = document.getElementById('skip-schedule-banner');
+                    if (data.skip_schedule_tonight) {
+                        skipBanner.style.display = 'flex';
                     } else {
-                        overrideBanner.style.display = 'none';
+                        skipBanner.style.display = 'none';
+                    }
+                    
+                    const chkSkip = document.getElementById('chk-skip-schedule');
+                    if (chkSkip) {
+                        // Only update visually if we aren't actively toggling it
+                        if (document.activeElement !== chkSkip) {
+                            chkSkip.checked = data.skip_schedule_tonight;
+                        }
                     }
 
                     // Update draft banner
@@ -1835,28 +1908,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         function triggerTask(taskName) {
             if (taskName === 'settlement') {
-                const today = new Date();
-                const yesterday = new Date(today);
-                yesterday.setDate(today.getDate() - 1);
-                
-                const yyyy = yesterday.getFullYear();
-                let mm = yesterday.getMonth() + 1;
-                let dd = yesterday.getDate();
-                
-                if (dd < 10) dd = '0' + dd;
-                if (mm < 10) mm = '0' + mm;
-                
-                const yearShort = String(yyyy).substring(2);
-                const defaultDesc = `${mm}${dd}${yearShort}`;
-                
-                const desc = prompt("Enter settlement description/date (MMDDYY):", defaultDesc);
-                if (desc === null) {
+                const desc = document.getElementById('settlement-desc').value.trim();
+                if (!desc) {
+                    alert("Please enter a settlement description/date.");
                     updateDashboard();
                     return;
                 }
                 
-                const rawInput = prompt("Enter Game URLs or Game IDs (separated by spaces or commas):");
-                if (rawInput === null) {
+                const rawInput = document.getElementById('settlement-games').value.trim();
+                if (!rawInput) {
+                    alert("Please enter Game URLs or Game IDs.");
                     updateDashboard();
                     return;
                 }
@@ -1885,7 +1946,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     return;
                 }
 
-                const isTest = confirm("Run in TEST mode? \n\n• Click OK to run calculations and see the payout table in logs (NO emails or Discord posts will be sent).\n\n• Click Cancel to run a standard settlement and send notifications.");
+                const isTest = document.getElementById('chk-settlement-test').checked;
                 
                 document.getElementById('btn-announcer').disabled = true;
                 document.getElementById('btn-settlement').disabled = true;
@@ -1922,10 +1983,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             document.getElementById('btn-settlement').disabled = true;
 
             const isDraft = document.getElementById('chk-announcer-draft').checked;
+            const isTest = document.getElementById('chk-announcer-test').checked;
             fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ draft: isDraft })
+                body: JSON.stringify({ draft: isDraft, test: isTest })
             })
                 .then(res => {
                     if (res.ok) {
@@ -2102,9 +2164,27 @@ class WebUIHandler(BaseHTTPRequestHandler):
             container.appendChild(row);
         }
 
-        function toggleAdhocButton() {
-            const checked = document.getElementById('chk-adhoc-acknowledge').checked;
-            document.getElementById('btn-launch-adhoc').disabled = !checked;
+
+        function toggleSkipSchedule() {
+            const isSkipped = document.getElementById('chk-skip-schedule').checked;
+            fetch('/api/toggle-skip-schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ skip: isSkipped })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    updateDashboard();
+                } else {
+                    alert('Error toggling kill switch');
+                    document.getElementById('chk-skip-schedule').checked = !isSkipped;
+                }
+            })
+            .catch(err => {
+                alert('Network error');
+                document.getElementById('chk-skip-schedule').checked = !isSkipped;
+            });
         }
 
         function launchAdhoc() {
@@ -2153,9 +2233,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 if (res.ok) {
                     alert(isDraft ? "Ad-hoc table creation draft saved successfully!" : "Ad-hoc game night creation launched successfully!");
                     document.getElementById('announcer-stderr-container').classList.remove('stale-log-box');
-                    // Reset acknowledgement checkbox
-                    document.getElementById('chk-adhoc-acknowledge').checked = false;
-                    toggleAdhocButton();
+                    document.getElementById('btn-launch-adhoc').disabled = false;
                 } else {
                     alert("Failed to launch ad-hoc task. Another announcer/settlement task may be running.");
                     document.getElementById('btn-launch-adhoc').disabled = false;
@@ -2287,6 +2365,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 }, 300);
             }, 2500);
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            
+            const yyyy = yesterday.getFullYear();
+            let mm = yesterday.getMonth() + 1;
+            let dd = yesterday.getDate();
+            
+            if (dd < 10) dd = '0' + dd;
+            if (mm < 10) mm = '0' + mm;
+            
+            const yearShort = String(yyyy).substring(2);
+            document.getElementById('settlement-desc').value = `${mm}${dd}${yearShort}`;
+        });
 
         // Periodically refresh dashboard every 2 seconds
         setInterval(updateDashboard, 2000);

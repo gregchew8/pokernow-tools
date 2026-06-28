@@ -108,8 +108,24 @@ def main():
     
     args = sys.argv[1:]
     
+    is_test = "--test" in args
+    is_draft = "--draft" in args
+    args = [a for a in args if a not in ("--test", "--draft")]
+    
     # If no arguments are passed, load dynamically from schedule.json based on the day of the week
     if not args:
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        skip_file = "skip_schedule.txt"
+        if os.path.exists(skip_file):
+            try:
+                with open(skip_file, "r") as f:
+                    skip_date = f.read().strip()
+                if skip_date == today_str:
+                    print(f"[{today_str}] Scheduled run skipped manually via Kill Switch flag.")
+                    sys.exit(0)
+            except Exception as e:
+                print(f"Warning: Could not read {skip_file}: {e}")
+
         # Get local time in PST/PDT by offsetting UTC by 7 hours (reliable for local day of week at 5:00 PM)
         local_now = datetime.datetime.utcnow() - datetime.timedelta(hours=7)
         day_name = local_now.strftime("%A").lower()
@@ -139,6 +155,9 @@ def main():
     # Pass all args (like game types/counts) to setup_poker_auth.py (headed by default to bypass Cloudflare bot check)
     setup_cmd = [sys.executable, "setup_poker_auth.py"] + args
     
+    import time
+    start_time = time.time()
+    
     print(f"Running table creation: {' '.join(setup_cmd)}")
     result = subprocess.run(setup_cmd, capture_output=True, text=True)
     print(result.stdout)
@@ -150,12 +169,14 @@ def main():
         raise RuntimeError(f"Table creation failed. setup_poker_auth.py exited with code {result.returncode}.\n\nSubprocess Output:\n{error_details}")
 
     # Read the created games JSON
-    import time
     import errno
     game_data = None
     for attempt in range(10):
         try:
             if os.path.exists("last_created_games.json"):
+                mtime = os.path.getmtime("last_created_games.json")
+                if mtime < start_time:
+                    raise RuntimeError("setup_poker_auth.py exited cleanly but did not create new tables (last_created_games.json is stale).")
                 with open("last_created_games.json", "r") as f:
                     game_data = f.read()
                 break
@@ -211,7 +232,11 @@ def main():
     text_content = "\n".join(text_lines)
     html_content = "\n".join(html_lines)
     
-    if "--draft" in sys.argv:
+    if is_test:
+        print("\n=== TEST MODE ===")
+        print("Calculations & table creation complete. Notifications, Discord, Calendar sync, and Drive backup bypassed.")
+        print(text_content)
+    elif is_draft:
         draft_data = {
             "type": "announcer",
             "subject": subject,
@@ -227,12 +252,13 @@ def main():
         # Post to Discord
         post_to_discord(subject, text_content)
 
-    # Sync to Google Calendar
-    print("\nStep 4: Syncing to Google Calendar...")
-    subprocess.run([sys.executable, "update_calendar.py"])
-    
-    # Automatically backup outputs to Google Drive
-    sync_to_google_drive()
+    if not is_test:
+        # Sync to Google Calendar
+        print("\nStep 4: Syncing to Google Calendar...")
+        subprocess.run([sys.executable, "update_calendar.py"])
+        
+        # Automatically backup outputs to Google Drive
+        sync_to_google_drive()
 
 if __name__ == "__main__":
     try:
