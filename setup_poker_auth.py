@@ -297,6 +297,39 @@ def run(tables_to_create):
         print("Output for Email (Copied to clipboard):\n")
         print(final_text)
         
+        # Save the created game details to a JSON file for the settlement script
+        today = datetime.datetime.now()
+        
+        is_adhoc_run = "--adhoc" in sys.argv
+        
+        game_history = {
+            "date": today.strftime("%Y-%m-%d"),
+            "description": today.strftime("%m%d%y"),
+            "game_ids": [url.split("/games/")[-1] for _, url in urls],
+            "tables": [],
+            "is_adhoc": is_adhoc_run
+        }
+        for (table_info, url) in urls:
+            if len(table_info) == 4:
+                g_type, t_num, g_sb, g_bb = table_info
+            else:
+                g_type, t_num = table_info
+                g_sb, g_bb = "0.25", "0.50"
+            game_history["tables"].append({
+                "game_type": g_type, 
+                "table_num": t_num, 
+                "sb": g_sb, 
+                "bb": g_bb, 
+                "game_id": url.split("/games/")[-1]
+            })
+            
+        try:
+            with open("last_created_games.json", "w") as f:
+                json.dump(game_history, f, indent=4)
+            print("Saved game details to 'last_created_games.json' for settlement automation.")
+        except Exception as e:
+            print(f"Warning: Could not save last_created_games.json: {e}")
+        
         process = subprocess.Popen('pbcopy', env={'LANG': 'en_US.UTF-8'}, stdin=subprocess.PIPE)
         process.communicate(final_text.encode('utf-8'))
         print("\n[SUCCESS] The URLs have been copied to your clipboard!")
