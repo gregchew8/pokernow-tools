@@ -247,14 +247,23 @@ if __name__ == "__main__":
         
         admin_email = os.environ.get("EMAIL_SENDER")
         if admin_email:
+            # 1. Send the basic error email to the admin group
             subject = f"ALERT: Poker Settlement Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
-            html_content = f"""
+            basic_html = f"<h3>Poker Settlement Failed</h3><p>The morning settlement task encountered an error:</p><pre style='color: red; padding: 10px; background: #f9f9f9; border: 1px solid #ccc;'>{error_msg}</pre>"
+            
+            original_receiver = os.environ.get("EMAIL_RECEIVER")
+            os.environ["EMAIL_RECEIVER"] = admin_email
+            send_email(subject, basic_html)
+            
+            # 2. Send the verbose instructions specifically to Greg
+            greg_subject = f"ACTION REQUIRED: Poker Settlement Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
+            greg_html = f"""
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
                 <h2 style="color: #ef4444;">🚨 Poker Settlement Failed</h2>
                 <p>The morning automatic settlement task encountered a critical error and could not complete.</p>
                 
                 <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0;">
-                    <h3 style="margin-top: 0; color: #1e3a8a;">Next Steps for Admins:</h3>
+                    <h3 style="margin-top: 0; color: #1e3a8a;">Next Steps for Greg:</h3>
                     <ol style="margin-bottom: 0;">
                         <li>Review the detailed technical stack trace below to identify the issue.</li>
                         <li>Open the <strong><a href="http://localhost:8080">Poker Now Control Panel</a></strong> (accessible via Tailscale IP on port 8080).</li>
@@ -267,9 +276,12 @@ if __name__ == "__main__":
                 <pre style="color: #b91c1c; padding: 15px; background: #fef2f2; border: 1px solid #f87171; overflow-x: auto; font-size: 12px; border-radius: 4px;">{error_msg}</pre>
             </div>
             """
-            original_receiver = os.environ.get("EMAIL_RECEIVER")
-            os.environ["EMAIL_RECEIVER"] = admin_email
-            send_email(subject, html_content)
+            os.environ["EMAIL_RECEIVER"] = "gregchew@gmail.com"
+            send_email(greg_subject, greg_html)
+            
+            # Restore original receiver
             if original_receiver:
                 os.environ["EMAIL_RECEIVER"] = original_receiver
+            else:
+                del os.environ["EMAIL_RECEIVER"]
         sys.exit(1)
