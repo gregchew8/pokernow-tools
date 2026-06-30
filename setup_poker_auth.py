@@ -4,6 +4,7 @@ import time
 import json
 import argparse
 import subprocess
+import datetime
 
 def run_applescript(script):
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
