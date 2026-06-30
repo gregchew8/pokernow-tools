@@ -248,8 +248,25 @@ if __name__ == "__main__":
         admin_email = os.environ.get("EMAIL_SENDER")
         if admin_email:
             subject = f"ALERT: Poker Settlement Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
-            html_content = f"<h3>Poker Settlement Failed</h3><p>The morning settlement task encountered an error:</p><pre style='color: red; padding: 10px; background: #f9f9f9; border: 1px solid #ccc;'>{error_msg}</pre>"
-            
+            html_content = f"""
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                <h2 style="color: #ef4444;">🚨 Poker Settlement Failed</h2>
+                <p>The morning automatic settlement task encountered a critical error and could not complete.</p>
+                
+                <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #1e3a8a;">Next Steps for Admins:</h3>
+                    <ol style="margin-bottom: 0;">
+                        <li>Review the detailed technical stack trace below to identify the issue.</li>
+                        <li>Open the <strong><a href="http://localhost:8080">Poker Now Control Panel</a></strong> (accessible via Tailscale IP on port 8080).</li>
+                        <li>Look at the <strong>System Logs</strong> section. The <em>Diagnostic Advisor</em> will automatically provide triaged recovery steps.</li>
+                        <li>If this is a <strong>missing player alias/nickname error</strong>, the Control Panel provides a 1-click clipboard copy button to easily paste the raw nickname directly into the Venmo mappings spreadsheet.</li>
+                    </ol>
+                </div>
+                
+                <p><strong>Technical Error Details:</strong></p>
+                <pre style="color: #b91c1c; padding: 15px; background: #fef2f2; border: 1px solid #f87171; overflow-x: auto; font-size: 12px; border-radius: 4px;">{error_msg}</pre>
+            </div>
+            """
             original_receiver = os.environ.get("EMAIL_RECEIVER")
             os.environ["EMAIL_RECEIVER"] = admin_email
             send_email(subject, html_content)

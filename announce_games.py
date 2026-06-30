@@ -276,8 +276,26 @@ if __name__ == "__main__":
         admin_email = os.environ.get("EMAIL_SENDER")
         if admin_email:
             subject = f"ALERT: Poker Game Announcer Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
-            html_content = f"<h3>Poker Game Announcer Failed</h3><p>The scheduled background task encountered an error:</p><pre style='color: red; padding: 10px; background: #f9f9f9; border: 1px solid #ccc;'>{error_msg}</pre>"
-            text_content = f"Poker Game Announcer Failed\n\nError details:\n{error_msg}"
+            html_content = f"""
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                <h2 style="color: #ef4444;">🚨 Poker Game Announcer Failed</h2>
+                <p>The scheduled background task to setup Poker Now tables encountered a critical error and could not complete.</p>
+                
+                <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #1e3a8a;">Next Steps for Admins:</h3>
+                    <ol style="margin-bottom: 0;">
+                        <li>Review the detailed technical stack trace below to identify the issue.</li>
+                        <li>Open the <strong><a href="http://localhost:8080">Poker Now Control Panel</a></strong> (accessible via Tailscale IP on port 8080).</li>
+                        <li>Look at the <strong>System Logs</strong> section. The <em>Diagnostic Advisor</em> will automatically provide triaged recovery steps.</li>
+                        <li>If the issue was a temporary network glitch or missing dependency, simply click <strong>Start Table Setup</strong> in the Game Announcer card on the Control Panel to manually retry the creation!</li>
+                    </ol>
+                </div>
+                
+                <p><strong>Technical Error Details:</strong></p>
+                <pre style="color: #b91c1c; padding: 15px; background: #fef2f2; border: 1px solid #f87171; overflow-x: auto; font-size: 12px; border-radius: 4px;">{error_msg}</pre>
+            </div>
+            """
+            text_content = f"Poker Game Announcer Failed\n\nNext Steps for Admins:\n1. Open the Poker Now Control Panel (via Tailscale on port 8080).\n2. Review the System Logs section for Diagnostic Advisor recovery steps.\n3. Click 'Start Table Setup' to try again once fixed.\n\nError details:\n{error_msg}"
             
             original_receiver = os.environ.get("EMAIL_RECEIVER")
             os.environ["EMAIL_RECEIVER"] = admin_email
