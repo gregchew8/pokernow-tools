@@ -137,6 +137,13 @@ def run(tables_to_create):
             sb_cents = sb
             bb_cents = bb
             
+        variant_map = {
+            "nlh": "th",
+            "plo": "omaha",
+            "plo8": "plo8"
+        }
+        variant_value = variant_map.get(game_type.lower(), "th")
+        
         # Configure everything!
         config_js = f"""
         function clickToggle(label, option) {{
@@ -199,6 +206,13 @@ def run(tables_to_create):
         }}
 
         clickToggle('Use cents values?', 'YES');
+        
+        // Set the poker variant
+        var select = document.querySelector('select');
+        if(select) {{
+            select.value = '{variant_value}';
+            select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
         
         setTimeout(() => {{
             var sbInp = document.querySelector('input[placeholder="SB"]');
