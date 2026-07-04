@@ -367,19 +367,16 @@ if __name__ == "__main__":
         try:
             config_data = json.loads(parsed.config)
             if isinstance(config_data, list):
-                type_counts = {}
                 for details in config_data:
                     game_type = details.get("type", "nlh").lower()
-                    type_counts[game_type] = type_counts.get(game_type, 0) + 1
-                    table_num = type_counts[game_type]
+                    table_num = len(tables_to_create) + 1
                     t_sb = str(details.get("sb", sb))
                     t_bb = str(details.get("bb", bb))
                     tables_to_create.append((game_type, table_num, t_sb, t_bb))
             elif isinstance(config_data, dict):
                 for table_name, details in config_data.items():
                     game_type = details.get("game_type", "nlh")
-                    table_num_str = table_name.split()[-1]
-                    table_num = int(table_num_str) if table_num_str.isdigit() else 1
+                    table_num = len(tables_to_create) + 1
                     t_sb = str(details.get("sb", sb))
                     t_bb = str(details.get("bb", bb))
                     tables_to_create.append((game_type.lower(), table_num, t_sb, t_bb))
@@ -403,8 +400,8 @@ if __name__ == "__main__":
                         i += 1
                     
                     for _ in range(count):
-                        current_type_count = len([t for t in tables_to_create if t[0] == arg])
-                        tables_to_create.append((arg, current_type_count + 1, sb, bb))
+                        table_num = len(tables_to_create) + 1
+                        tables_to_create.append((arg, table_num, sb, bb))
                 else:
                     print(f"Error: Unknown argument '{arg}'")
                     sys.exit(1)
