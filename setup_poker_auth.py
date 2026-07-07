@@ -69,11 +69,14 @@ def run(tables_to_create):
             inject_js("window.open('https://www.pokernow.com/start-game', '_blank');")
             time.sleep(3)
         
-        print("\n" + "="*60)
-        print(f" ACTION REQUIRED FOR TABLE {idx+1}:")
+        print("============================================================")
+        print(f" ACTION REQUIRED FOR TABLE {idx+1} of {total_tables}:")
         print(" 1. In the Chrome window, click the Turnstile checkbox ('Verify you are human').")
         print(" The script will automatically detect the game and configure it instantly!")
-        print("="*60 + "\n")
+        print("============================================================")
+        
+        # Force Chrome to the absolute foreground so the user can see Turnstile
+        run_applescript('tell application "Google Chrome" to activate')
         
         detected_url = None
         for _ in range(120): # Wait up to 120 seconds for manual Turnstile bypass
@@ -92,8 +95,7 @@ def run(tables_to_create):
                 return urlList as string
             end tell
             ''')
-            
-            all_urls = [u.strip() for u in urls_str.split('\\n') if u.strip()]
+            all_urls = [u.strip() for u in urls_str.split('\n') if u.strip()]
             
             # Check if a new game URL appeared
             for u in all_urls:
