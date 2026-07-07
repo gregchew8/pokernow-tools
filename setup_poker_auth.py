@@ -10,17 +10,25 @@ def run_applescript(script):
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     return res.stdout.strip()
 
-def inject_js(js_code):
+def inject_js(js_code, target_url="pokernow.com"):
     # Escape quotes and backslashes for AppleScript string literal
     escaped_js = js_code.replace('\\', '\\\\').replace('"', '\\"')
     script = f"""
     tell application "Google Chrome"
-        execute front window's active tab javascript "{escaped_js}"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if URL of t contains "{target_url}" then
+                    execute t javascript "{escaped_js}"
+                    return
+                end if
+            end repeat
+        end repeat
     end tell
     """
     return run_applescript(script)
 
 def run(tables_to_create):
+    known_game_urls = set()
     user_data_dir = os.path.abspath(os.path.join(os.getcwd(), "chrome-profile"))
     if not os.path.exists(user_data_dir):
         print("Please run login.py first to authenticate with Google.")
@@ -69,12 +77,35 @@ def run(tables_to_create):
         
         detected_url = None
         for _ in range(120): # Wait up to 120 seconds for manual Turnstile bypass
-            url = run_applescript('tell application "Google Chrome" to return URL of active tab of front window')
-            if url and "pokernow.com/games/" in url:
-                detected_url = url
+            # Get all URLs of all tabs across all Chrome windows
+            urls_str = run_applescript('''
+            tell application "Google Chrome"
+                set urlList to {}
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if URL of t contains "pokernow.com" then
+                            set end of urlList to URL of t
+                        end if
+                    end repeat
+                end repeat
+                set AppleScript's text item delimiters to "\\n"
+                return urlList as string
+            end tell
+            ''')
+            
+            all_urls = [u.strip() for u in urls_str.split('\\n') if u.strip()]
+            
+            # Check if a new game URL appeared
+            for u in all_urls:
+                if "pokernow.com/games/" in u and u not in known_game_urls:
+                    detected_url = u
+                    known_game_urls.add(u)
+                    break
+            
+            if detected_url:
                 break
                 
-            if "start-game" in url:
+            if any("start-game" in u for u in all_urls):
                 # Inject JS to fill Nickname (if empty) and click Create
                 js = """
                 var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[type="text"]') || document.querySelector('input');
@@ -95,7 +126,7 @@ def run(tables_to_create):
                     }
                 }
                 """
-                inject_js(js)
+                inject_js(js, target_url="start-game")
                 
             time.sleep(1)
             
@@ -113,7 +144,7 @@ def run(tables_to_create):
         for (var b of btns) {
             if (b.innerText.toUpperCase().includes('OPTIONS')) { b.click(); break; }
         }
-        """)
+        """, target_url=detected_url)
         time.sleep(2)
         
         # Click Game Configurations
@@ -122,7 +153,7 @@ def run(tables_to_create):
         for (var b of btns) {
             if (b.innerText.toUpperCase().includes('GAME CONFIGURATIONS')) { b.click(); break; }
         }
-        """)
+        """, target_url=detected_url)
         time.sleep(2)
         
         # Click Yes on returning seat modal if it exists
@@ -131,7 +162,7 @@ def run(tables_to_create):
         for (var b of btns) {
             if (b.innerText.toUpperCase() === 'YES') { b.click(); break; }
         }
-        """)
+        """, target_url=detected_url)
         time.sleep(1)
         
         try:
@@ -244,7 +275,7 @@ def run(tables_to_create):
             clickToggle('Allow UTG Straddle', 'YES');
         }}, 500);
         """
-        inject_js(config_js)
+        inject_js(config_js, target_url=detected_url)
         time.sleep(3)
         
         # Change table title (Optional)
@@ -272,7 +303,7 @@ def run(tables_to_create):
         }} catch(e) {{}}
         """
         if table_num:
-            inject_js(title_js)
+            inject_js(title_js, target_url=detected_url)
             time.sleep(3)
             
         # Click Update Game or Close
@@ -286,7 +317,7 @@ def run(tables_to_create):
         }
         // Fallback: press escape
         document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Escape'}));
-        """)
+        """, target_url=detected_url)
         time.sleep(2)
         
         # Verify URL again just in case
