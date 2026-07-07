@@ -78,17 +78,18 @@ def run(tables_to_create):
                 # Inject JS to fill Nickname (if empty) and click Create
                 js = """
                 var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[type="text"]') || document.querySelector('input');
-                if (input && !input.value) {
-                    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                    nativeInputValueSetter.call(input, 'Dealer');
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                var buttons = document.querySelectorAll('button');
-                for (var i = 0; i < buttons.length; i++) {
-                    var txt = buttons[i].innerText || buttons[i].textContent || '';
-                    if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
-                        if (input && input.value === 'Dealer') {
+                if (input) {
+                    if (input.value !== 'Dealer') {
+                        input.focus();
+                        input.value = '';
+                        document.execCommand('insertText', false, 'Dealer');
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    var buttons = document.querySelectorAll('button');
+                    for (var i = 0; i < buttons.length; i++) {
+                        var txt = buttons[i].innerText || buttons[i].textContent || '';
+                        if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
                             buttons[i].click();
                         }
                     }
