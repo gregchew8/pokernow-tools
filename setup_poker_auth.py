@@ -335,20 +335,7 @@ def run(tables_to_create):
     # or just leave it open!
     print("Configuration complete! The Chrome window is still open for you to verify.")
     
-    if urls:
-        formatted_list = []
-        for (table_info, url) in urls:
-            if len(table_info) == 4:
-                game_type, table_num, sb, bb = table_info
-            else:
-                game_type, table_num = table_info
-                sb, bb = "0.25", "0.50"
-            formatted_list.append(f"Table {table_num} - {game_type.upper()} <{url}>")
-            
-        final_text = "\n".join(formatted_list)
-        print("Output for Email (Copied to clipboard):\n")
-        print(final_text)
-        
+
         # Save the created game details to a JSON file for the settlement script
         today = datetime.datetime.now()
         
@@ -381,10 +368,7 @@ def run(tables_to_create):
             print("Saved game details to 'last_created_games.json' for settlement automation.")
         except Exception as e:
             print(f"Warning: Could not save last_created_games.json: {e}")
-        
-        process = subprocess.Popen('pbcopy', env={'LANG': 'en_US.UTF-8'}, stdin=subprocess.PIPE)
-        process.communicate(final_text.encode('utf-8'))
-        print("\n[SUCCESS] The URLs have been copied to your clipboard!")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create Poker Now tables.")
