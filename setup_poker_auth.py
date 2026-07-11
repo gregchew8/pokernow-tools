@@ -95,7 +95,7 @@ def run(tables_to_create):
                 return urlList as string
             end tell
             ''')
-            all_urls = [u.strip() for u in urls_str.split('\n') if u.strip()]
+            all_urls = [u.strip() for u in urls_str.split('\\n') if u.strip()]
             
             # Check if a new game URL appeared
             for u in all_urls:
