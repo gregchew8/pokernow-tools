@@ -113,9 +113,8 @@ def run(tables_to_create):
                 var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[type="text"]') || document.querySelector('input');
                 if (input) {
                     if (input.value !== 'Dealer') {
-                        input.focus();
-                        input.value = '';
-                        document.execCommand('insertText', false, 'Dealer');
+                        let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                        setter.call(input, 'Dealer');
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                         input.dispatchEvent(new Event('change', { bubbles: true }));
                     }
