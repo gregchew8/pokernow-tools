@@ -335,7 +335,7 @@ def run(tables_to_create):
     # or just leave it open!
     print("Configuration complete! The Chrome window is still open for you to verify.")
     
-
+    if urls:
         # Save the created game details to a JSON file for the settlement script
         today = datetime.datetime.now()
         
