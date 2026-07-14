@@ -8,6 +8,8 @@ import datetime
 
 def run_applescript(script):
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"[AppleScript Error]: {res.stderr.strip()}", file=sys.stderr)
     return res.stdout.strip()
 
 def inject_js(js_code, target_url="pokernow.com"):
