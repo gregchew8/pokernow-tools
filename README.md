@@ -12,7 +12,8 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
    - Logs into your Poker Now owner lobby.
    - **Hybrid OS-Level Bypass & Pure JS Injection**: Completely evades Cloudflare Turnstile bot protection by launching a *clean* Chrome instance without Playwright or CDP. 
    - **Preserves Active Session**: Keeps the original Chrome window open to prevent LevelDB session corruption and guarantee that Game Configurations are accessible as the fully authenticated Room Owner.
-   - **Flawless DOM Traversal**: Uses AppleScript to inject highly advanced, case-insensitive JavaScript DOM traversal directly into the active tab to instantly configure Cents, Blinds, Timers, and toggles, bypassing Poker Now's HTML/CSS text-transform casing and React table structures.
+   - **Flawless DOM Traversal & Mithril.js Sync**: Uses AppleScript to inject highly advanced JavaScript DOM traversal directly into the active tab. It intelligently handles Mithril.js virtual DOM race conditions by asynchronously staggering input typing and button clicking, guaranteeing the UI state is synced before form submission.
+   - **macOS System Permissions**: Native OS-level AppleScript injection requires the "Allow JavaScript from Apple Events" permission to be enabled in Chrome (`View > Developer > Allow JavaScript from Apple Events`). The script includes diagnostic logging to automatically surface if this permission is revoked by Chrome updates.
    - Copies ready-to-share links and commands to the clipboard along with an email subject line.
    - (Playwright is preserved only for background automated settlement parsing where Turnstile is not active).
 2. **Automated Scheduler** (`setup_local_scheduler.py`)
