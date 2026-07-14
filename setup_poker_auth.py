@@ -119,12 +119,13 @@ def run(tables_to_create):
                         setter.call(input, 'Dealer');
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                         input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    var buttons = document.querySelectorAll('button');
-                    for (var i = 0; i < buttons.length; i++) {
-                        var txt = buttons[i].innerText || buttons[i].textContent || '';
-                        if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
-                            buttons[i].click();
+                    } else {
+                        var buttons = document.querySelectorAll('button');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var txt = buttons[i].innerText || buttons[i].textContent || '';
+                            if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
+                                buttons[i].click();
+                            }
                         }
                     }
                 }
