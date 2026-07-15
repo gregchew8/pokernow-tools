@@ -1851,6 +1851,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     
                     if (data.last_games && data.last_games.tables && data.last_games.tables.length > 0) {
                         activeDate.textContent = `(Game Date: ${data.last_games.date})`;
+                        
+                        // Auto-populate settlement games textarea once on initial load
+                        if (!window.hasPopulatedGames) {
+                            window.hasPopulatedGames = true;
+                            const textarea = document.getElementById('settlement-games');
+                            if (!textarea.value.trim()) {
+                                textarea.value = data.last_games.tables.map(t => t.game_id).join('\n');
+                            }
+                        }
+
                         data.last_games.tables.forEach(t => {
                             const item = document.createElement('div');
                             item.className = 'game-item';
