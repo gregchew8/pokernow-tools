@@ -575,6 +575,34 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "skip_schedule_tonight": skip_schedule_tonight
                 }
             self.wfile.write(json.dumps(status).encode("utf-8"))
+        elif self.path == "/api/execution-times":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            
+            import plistlib
+            def get_hour_minute(plist_name, default_hour):
+                path = os.path.expanduser(f"~/Library/LaunchAgents/{plist_name}")
+                if os.path.exists(path):
+                    try:
+                        with open(path, 'rb') as f:
+                            pl = plistlib.load(f)
+                            intervals = pl.get("StartCalendarInterval", [])
+                            if intervals and len(intervals) > 0:
+                                h = intervals[0].get("Hour", default_hour)
+                                m = intervals[0].get("Minute", 0)
+                                return f"{h:02d}:{m:02d}"
+                    except Exception as e:
+                        print(f"[WebUI] Error reading {plist_name}: {e}")
+                return f"{default_hour:02d}:00"
+                
+            game_nights_time = get_hour_minute("com.pokernow.game_nights.plist", 17)
+            next_morning_time = get_hour_minute("com.pokernow.next_morning.plist", 8)
+            
+            self.wfile.write(json.dumps({
+                "setup_time": game_nights_time,
+                "settlement_time": next_morning_time
+            }).encode("utf-8"))
         elif self.path == "/api/schedule":
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -751,6 +779,46 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     success = save_acknowledged_error(error_id)
             except Exception as e:
                 print(f"[WebUI] Error acknowledging error: {e}")
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/execution-times":
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            success = False
+            try:
+                payload = json.loads(post_data.decode("utf-8"))
+                setup_time = payload.get("setup_time")
+                settlement_time = payload.get("settlement_time")
+                
+                import plistlib
+                def set_hour_minute(plist_name, time_str):
+                    if not time_str: return
+                    path = os.path.expanduser(f"~/Library/LaunchAgents/{plist_name}")
+                    if os.path.exists(path):
+                        h, m = map(int, time_str.split(':'))
+                        with open(path, 'rb') as f:
+                            pl = plistlib.load(f)
+                        intervals = pl.get("StartCalendarInterval", [])
+                        for i in intervals:
+                            i["Hour"] = h
+                            i["Minute"] = m
+                        with open(path, 'wb') as f:
+                            plistlib.dump(pl, f)
+                        
+                        subprocess.run(["launchctl", "unload", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(["launchctl", "load", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                if setup_time:
+                    set_hour_minute("com.pokernow.game_nights.plist", setup_time)
+                if settlement_time:
+                    set_hour_minute("com.pokernow.next_morning.plist", settlement_time)
+                
+                success = True
+            except Exception as e:
+                print(f"[WebUI] Error saving execution times: {e}")
+                
             self.send_response(200 if success else 400)
             self.send_header("Content-type", "application/json")
             self.end_headers()
@@ -1463,6 +1531,32 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </div>
             </div>
 
+            <!-- Execution Times Card -->
+            <div class="card full-width">
+                <h2 class="collapsible-header" id="execution-header" onclick="toggleCollapsible('execution-editor', 'execution-header')">
+                    <span>Automation Execution Times</span>
+                </h2>
+                <div id="execution-editor" class="collapsible-content">
+                    <p class="subtitle" style="margin-bottom: 1.5rem;">Configure the exact time of day the Mac Mini runs these automated tasks.</p>
+                    
+                    <div style="display: flex; gap: 2rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 250px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; font-weight: 600;">Table Setup Time (Mon, Wed, Fri, Sat)</label>
+                            <input type="time" id="time-setup" class="input-field" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace;">
+                        </div>
+                        <div style="flex: 1; min-width: 250px;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; font-weight: 600;">Payout Settlement Time (Tue, Thu, Sat, Sun)</label>
+                            <input type="time" id="time-settlement" class="input-field" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace;">
+                        </div>
+                    </div>
+                    
+                    <div class="btn-save-container">
+                        <button class="btn-action btn-secondary" onclick="loadExecutionTimes()">Reset Changes</button>
+                        <button id="btn-save-times" class="btn-action btn-primary" onclick="saveExecutionTimes()">Save Execution Times</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Adhoc Game Launcher Card -->
             <div class="card full-width">
                 <h2 class="collapsible-header" id="adhoc-header" onclick="toggleCollapsible('adhoc-launcher', 'adhoc-header')">
@@ -2042,10 +2136,52 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 header.classList.add('active');
                 if (contentId === 'schedule-editor') {
                     loadSchedule();
+                } else if (contentId === 'execution-editor') {
+                    loadExecutionTimes();
                 } else if (contentId === 'adhoc-launcher') {
                     initAdhocBuilder();
                 }
             }
+        }
+
+        function loadExecutionTimes() {
+            fetch('/api/execution-times')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('time-setup').value = data.setup_time || '17:00';
+                    document.getElementById('time-settlement').value = data.settlement_time || '08:00';
+                })
+                .catch(err => console.error("Error loading execution times:", err));
+        }
+
+        function saveExecutionTimes() {
+            const setup_time = document.getElementById('time-setup').value;
+            const settlement_time = document.getElementById('time-settlement').value;
+            
+            const btn = document.getElementById('btn-save-times');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            
+            fetch('/api/execution-times', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ setup_time, settlement_time })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = 'Save Execution Times';
+                if (data.success) {
+                    alert("Execution times successfully updated and saved to macOS!");
+                } else {
+                    alert("Failed to save execution times. Check server logs.");
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = 'Save Execution Times';
+                alert("Error saving execution times: " + err);
+            });
         }
 
         const ALL_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];

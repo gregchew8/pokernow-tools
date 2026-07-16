@@ -204,20 +204,33 @@ def main():
         working_dir=working_dir
     )
 
-    # Write files
-    with open(game_nights_path, "w") as f:
-        f.write(game_nights_content)
-    print(f"Created: {game_nights_path}")
+    import plistlib
+    def preserve_and_write(path, template_content):
+        existing_intervals = None
+        if os.path.exists(path):
+            try:
+                with open(path, 'rb') as f:
+                    pl = plistlib.load(f)
+                    existing_intervals = pl.get("StartCalendarInterval")
+            except Exception:
+                pass
+        
+        try:
+            pl_new = plistlib.loads(template_content.encode('utf-8'))
+            if existing_intervals:
+                pl_new["StartCalendarInterval"] = existing_intervals
+            with open(path, 'wb') as f:
+                plistlib.dump(pl_new, f)
+            print(f"Created/Updated: {path}")
+        except Exception as e:
+            # Fallback if there's an issue with plistlib
+            with open(path, "w") as f:
+                f.write(template_content)
+            print(f"Created: {path}")
 
-    with open(next_morning_path, "w") as f:
-        f.write(next_morning_content)
-    print(f"Created: {next_morning_path}")
-
-    with open(web_ui_path, "w") as f:
-        f.write(web_ui_content)
-    print(f"Created: {web_ui_path}")
-
-    # Unload if already loaded to avoid errors
+    preserve_and_write(game_nights_path, game_nights_content)
+    preserve_and_write(next_morning_path, next_morning_content)
+    preserve_and_write(web_ui_path, web_ui_content)
     agents_list = [
         (GAME_NIGHTS_LABEL, game_nights_path),
         (NEXT_MORNING_LABEL, next_morning_path),
