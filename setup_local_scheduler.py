@@ -205,32 +205,55 @@ def main():
     )
 
     import plistlib
-    def preserve_and_write(path, template_content):
-        existing_intervals = None
-        if os.path.exists(path):
-            try:
-                with open(path, 'rb') as f:
-                    pl = plistlib.load(f)
-                    existing_intervals = pl.get("StartCalendarInterval")
-            except Exception:
-                pass
+    import json
+    
+    # Read schedule.json to build intervals
+    schedule_path = os.path.join(working_dir, "schedule.json")
+    schedule_data = {}
+    if os.path.exists(schedule_path):
+        with open(schedule_path, "r") as f:
+            schedule_data = json.load(f)
+            
+    days_map = {
+        "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4,
+        "friday": 5, "saturday": 6, "sunday": 0
+    }
+    
+    gn_intervals = []
+    nm_intervals = []
+    
+    for day, config in schedule_data.items():
+        if day not in days_map or not isinstance(config, dict): continue
+        weekday = days_map[day]
+        next_weekday = (weekday + 1) % 7
         
-        try:
-            pl_new = plistlib.loads(template_content.encode('utf-8'))
-            if existing_intervals:
-                pl_new["StartCalendarInterval"] = existing_intervals
-            with open(path, 'wb') as f:
-                plistlib.dump(pl_new, f)
-            print(f"Created/Updated: {path}")
-        except Exception as e:
-            # Fallback if there's an issue with plistlib
-            with open(path, "w") as f:
-                f.write(template_content)
-            print(f"Created: {path}")
+        setup_time = config.get("setup_time")
+        if setup_time:
+            h, m = map(int, setup_time.split(':'))
+            gn_intervals.append({"Hour": h, "Minute": m, "Weekday": weekday})
+            
+        settlement_time = config.get("settlement_time")
+        if settlement_time:
+            h, m = map(int, settlement_time.split(':'))
+            nm_intervals.append({"Hour": h, "Minute": m, "Weekday": next_weekday})
 
-    preserve_and_write(game_nights_path, game_nights_content)
-    preserve_and_write(next_morning_path, next_morning_content)
-    preserve_and_write(web_ui_path, web_ui_content)
+    def write_plist(path, template_content, intervals):
+        pl_new = plistlib.loads(template_content.encode('utf-8'))
+        pl_new["StartCalendarInterval"] = intervals
+        with open(path, 'wb') as f:
+            plistlib.dump(pl_new, f)
+        print(f"Created/Updated: {path}")
+
+    # Remove the old preserve_and_write fallback, we now force intervals from schedule.json
+    write_plist(game_nights_path, game_nights_content, gn_intervals)
+    write_plist(next_morning_path, next_morning_content, nm_intervals)
+    
+    # For web_ui, there is no StartCalendarInterval, just dump it
+    web_pl = plistlib.loads(web_ui_content.encode('utf-8'))
+    with open(web_ui_path, 'wb') as f:
+        plistlib.dump(web_pl, f)
+    print(f"Created/Updated: {web_ui_path}")
+    
     agents_list = [
         (GAME_NIGHTS_LABEL, game_nights_path),
         (NEXT_MORNING_LABEL, next_morning_path),

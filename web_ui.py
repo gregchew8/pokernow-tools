@@ -676,6 +676,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 with open(schedule_path, "w") as f:
                     json.dump(new_schedule, f, indent=4)
                 
+                # Re-generate launchd plist intervals from the updated schedule
+                subprocess.run([sys.executable, "setup_local_scheduler.py"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
                 # Sync changes to drive
                 subprocess.run(["./sync_to_drive.sh"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
@@ -1534,31 +1537,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </div>
             </div>
 
-            <!-- Execution Times Card -->
-            <div class="card full-width">
-                <h2 class="collapsible-header" id="execution-header" onclick="toggleCollapsible('execution-editor', 'execution-header')">
-                    <span>Automation Execution Times</span>
-                </h2>
-                <div id="execution-editor" class="collapsible-content">
-                    <p class="subtitle" style="margin-bottom: 1.5rem;">Configure the exact time of day the Mac Mini runs these automated tasks.</p>
-                    
-                    <div style="display: flex; gap: 2rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-                        <div style="flex: 1; min-width: 250px;">
-                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; font-weight: 600;">Table Setup Time (Mon, Wed, Fri, Sat)</label>
-                            <input type="time" id="time-setup" class="input-field" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace;">
-                        </div>
-                        <div style="flex: 1; min-width: 250px;">
-                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; font-weight: 600;">Payout Settlement Time (Tue, Thu, Sat, Sun)</label>
-                            <input type="time" id="time-settlement" class="input-field" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace;">
-                        </div>
-                    </div>
-                    
-                    <div class="btn-save-container">
-                        <button class="btn-action btn-secondary" onclick="loadExecutionTimes()">Reset Changes</button>
-                        <button id="btn-save-times" class="btn-action btn-primary" onclick="saveExecutionTimes()">Save Execution Times</button>
-                    </div>
-                </div>
-            </div>
+
 
             <!-- Adhoc Game Launcher Card -->
             <div class="card full-width">
@@ -2200,10 +2179,35 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         const panel = document.createElement('div');
                         panel.className = 'day-panel';
                         
+                        // Normalize: support both old (array) and new (object with .tables) formats
+                        const dayConfig = schedule[day];
+                        const tables = Array.isArray(dayConfig) ? dayConfig : (dayConfig && dayConfig.tables ? dayConfig.tables : []);
+                        const setupTime = (dayConfig && dayConfig.setup_time) ? dayConfig.setup_time : '17:00';
+                        const settlementTime = (dayConfig && dayConfig.settlement_time) ? dayConfig.settlement_time : '08:00';
+                        const isEnabled = tables.length > 0;
+                        
                         const title = document.createElement('div');
                         title.className = 'day-title';
                         title.innerHTML = `<span>${day}</span>`;
                         panel.appendChild(title);
+
+                        // Time pickers — only shown when day has tables
+                        const timesDiv = document.createElement('div');
+                        timesDiv.id = `times-${day}`;
+                        timesDiv.style.cssText = 'display:' + (isEnabled ? 'flex' : 'none') + '; gap:1rem; margin:0.6rem 0 0.5rem; flex-wrap:wrap; align-items:center;';
+                        timesDiv.innerHTML = `
+                            <div style="display:flex;align-items:center;gap:0.4rem;flex:1;min-width:160px;">
+                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">🎮 Setup at</label>
+                                <input type="time" id="setup-time-${day}" value="${setupTime}"
+                                    style="background:rgba(0,0,0,0.3);color:#fff;border:1px solid var(--border-color);padding:0.3rem 0.5rem;border-radius:4px;font-family:monospace;font-size:0.85rem;width:110px;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:0.4rem;flex:1;min-width:160px;">
+                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">💰 Settle at</label>
+                                <input type="time" id="settle-time-${day}" value="${settlementTime}"
+                                    style="background:rgba(0,0,0,0.3);color:#fff;border:1px solid var(--border-color);padding:0.3rem 0.5rem;border-radius:4px;font-family:monospace;font-size:0.85rem;width:110px;">
+                            </div>
+                        `;
+                        panel.appendChild(timesDiv);
                         
                         const gamesDiv = document.createElement('div');
                         gamesDiv.className = 'day-games';
@@ -2213,17 +2217,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         const addBtn = document.createElement('button');
                         addBtn.className = 'btn-add-game';
                         addBtn.textContent = '+ Add Table';
-                        addBtn.onclick = () => addScheduleGame(day);
+                        addBtn.onclick = () => {
+                            addScheduleGame(day);
+                            document.getElementById(`times-${day}`).style.display = 'flex';
+                        };
                         panel.appendChild(addBtn);
                         
                         container.appendChild(panel);
 
-                        // Populate existing games
-                        if (schedule[day] && Array.isArray(schedule[day])) {
-                            schedule[day].forEach(g => {
-                                addScheduleGame(day, g.type, g.sb, g.bb);
-                            });
-                        }
+                        // Populate existing tables
+                        tables.forEach(g => addScheduleGame(day, g.type, g.sb, g.bb));
                     });
                 })
                 .catch(err => console.error("Error loading schedule:", err));
@@ -2243,9 +2246,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <option value="plo8" ${type === 'plo8' ? 'selected' : ''}>PLO8</option>
                 </select>
                 <input type="text" class="input-small input-stakes game-sb" placeholder="SB" value="${sb}">
-                <span style="font-size:0.8rem;color:var(--text-muted);">/</span>
+                <span style="font-size:0.8rem;color:var(--text-muted);"> / </span>
                 <input type="text" class="input-small input-stakes game-bb" placeholder="BB" value="${bb}">
-                <button class="btn-icon" onclick="this.parentElement.remove()" title="Remove game">✕</button>
+                <button class="btn-icon" onclick="this.parentElement.remove(); if(!document.getElementById('games-${day}').children.length) document.getElementById('times-${day}').style.display='none';" title="Remove game">✕</button>
             `;
             gamesDiv.appendChild(row);
         }
@@ -2259,15 +2262,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 
                 const rows = gamesDiv.getElementsByClassName('game-row');
                 if (rows.length > 0) {
-                    newSchedule[day] = [];
+                    const tables = [];
                     Array.from(rows).forEach(row => {
                         const type = row.querySelector('.game-type').value;
                         const sb = row.querySelector('.game-sb').value.trim();
                         const bb = row.querySelector('.game-bb').value.trim();
                         if (type && sb && bb) {
-                            newSchedule[day].push({ type, sb, bb });
+                            tables.push({ type, sb, bb });
                         }
                     });
+                    const setupTimeEl = document.getElementById(`setup-time-${day}`);
+                    const settleTimeEl = document.getElementById(`settle-time-${day}`);
+                    newSchedule[day] = {
+                        setup_time: setupTimeEl ? setupTimeEl.value : '17:00',
+                        settlement_time: settleTimeEl ? settleTimeEl.value : '08:00',
+                        tables: tables
+                    };
                 }
             });
             
@@ -2278,7 +2288,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             })
             .then(res => {
                 if (res.ok) {
-                    alert("Schedule saved successfully!");
+                    alert("Schedule saved! Automation times updated.");
                     loadSchedule();
                 } else {
                     alert("Failed to save schedule.");
