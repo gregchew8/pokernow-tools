@@ -5,6 +5,7 @@ gg.csv
 
 # Avoid committing browser login cookies and session tokens
 chrome-profile/
+chrome-profile-test/
 auth.json
 
 # Avoid committing ledger downloads and outputs
@@ -28,3 +29,7 @@ last_created_games.json
 # Local Playwright binaries
 playwright-browsers/
 
+# Scratch / test scripts
+test_*.py
+dump_*.py
+screen.png
