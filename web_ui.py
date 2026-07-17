@@ -753,7 +753,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 task_name = payload.get("task")
                 if task_name in ["announcer", "settlement"]:
                     script_name = "announce_games.py" if task_name == "announcer" else "auto_settle.py"
-                    import subprocess
                     # Terminate the running script
                     subprocess.run(["pkill", "-f", script_name])
                     # Terminate any Chrome instances tied to the profile
@@ -817,7 +816,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 
                 success = True
             except Exception as e:
-                print(f"[WebUI] Error saving execution times: {e}")
+                import traceback
+                error_str = traceback.format_exc()
+                print(f"[WebUI] Error saving execution times: {error_str}")
+                with open("/Users/gregchew/pokernow/output/execution_times_debug.log", "w") as f:
+                    f.write(error_str)
                 
             self.send_response(200 if success else 400)
             self.send_header("Content-type", "application/json")
