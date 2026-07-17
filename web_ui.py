@@ -676,16 +676,28 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 with open(schedule_path, "w") as f:
                     json.dump(new_schedule, f, indent=4)
                 
-                # Re-generate launchd plist intervals from the updated schedule
-                subprocess.run([sys.executable, "setup_local_scheduler.py"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-                # Sync changes to drive
-                subprocess.run(["./sync_to_drive.sh"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
+                # Send the HTTP response BEFORE reloading daemons.
+                # setup_local_scheduler.py calls launchctl unload/load on the web_ui
+                # plist which would kill this very request if run synchronously.
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+                
+                # Reload daemons and sync in a daemon thread so the response is
+                # already delivered before launchctl touches the web_ui process.
+                def _post_save():
+                    try:
+                        subprocess.run([sys.executable, "setup_local_scheduler.py"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception as ex:
+                        print(f"[WebUI] Error reloading scheduler: {ex}")
+                    try:
+                        subprocess.run(["./sync_to_drive.sh"], cwd=WORKING_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        pass
+                t = threading.Thread(target=_post_save, daemon=True)
+                t.start()
+                return
             except Exception as e:
                 self.send_response(400)
                 self.send_header("Content-type", "application/json")
@@ -2197,12 +2209,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         timesDiv.style.cssText = 'display:' + (isEnabled ? 'flex' : 'none') + '; gap:1rem; margin:0.6rem 0 0.5rem; flex-wrap:wrap; align-items:center;';
                         timesDiv.innerHTML = `
                             <div style="display:flex;align-items:center;gap:0.4rem;flex:1;min-width:160px;">
-                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">🎮 Setup at</label>
+                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">🎮 Setup @</label>
                                 <input type="time" id="setup-time-${day}" value="${setupTime}"
                                     style="background:rgba(0,0,0,0.3);color:#fff;border:1px solid var(--border-color);padding:0.3rem 0.5rem;border-radius:4px;font-family:monospace;font-size:0.85rem;width:110px;">
                             </div>
                             <div style="display:flex;align-items:center;gap:0.4rem;flex:1;min-width:160px;">
-                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">💰 Settle at</label>
+                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">💰 Settles tmw @</label>
                                 <input type="time" id="settle-time-${day}" value="${settlementTime}"
                                     style="background:rgba(0,0,0,0.3);color:#fff;border:1px solid var(--border-color);padding:0.3rem 0.5rem;border-radius:4px;font-family:monospace;font-size:0.85rem;width:110px;">
                             </div>
