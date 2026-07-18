@@ -256,9 +256,11 @@ def main():
     
     agents_list = [
         (GAME_NIGHTS_LABEL, game_nights_path),
-        (NEXT_MORNING_LABEL, next_morning_path),
-        (WEB_UI_LABEL, web_ui_path)
+        (NEXT_MORNING_LABEL, next_morning_path)
     ]
+    if "--skip-web-ui" not in sys.argv:
+        agents_list.append((WEB_UI_LABEL, web_ui_path))
+
     for label, plist_path in agents_list:
         subprocess.run(["launchctl", "unload", plist_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         

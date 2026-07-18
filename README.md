@@ -66,13 +66,24 @@ python3 login.py
 - Once logged in, press **Enter** in your terminal window to save the session locally in `./chrome-profile`.
 
 ### 4. Scheduler & Web UI Installation
-Register the launchd agents for automated execution and remote-control UI:
+Register the launchd agents for automated execution and remote-control UI: 
 ```bash
 python3 setup_local_scheduler.py
 ```
 - **Web UI Control Panel**: Starts immediately and runs in the background on port `8080` (access via `http://<tailscale-ip>:8080` when on Tailscale).
 - **Game Announcements**: Triggers automatically at **5:00 PM** (Mon, Wed, Fri, Sat).
 - **Settlements**: Runs automatically at **8:00 AM** (Tue, Thu, Sat, Sun).
+
+**⚠️ Important**: Changing `schedule.json` while the UI is running can cause `ERR_CONNECTION_REFUSED` because the launch agent reload stops the web UI mid‑request. 
+To avoid this, run the scheduler with the new flag:
+```bash
+python3 setup_local_scheduler.py --skip-web-ui
+```
+This reloads only the `game_nights` and `next_morning` agents, leaving the UI daemon running and preventing the connection error.
+Use the flag only when you are editing the schedule; for code changes or full restarts run the script without the flag.
+```bash
+python3 setup_local_scheduler.py
+```
 
 ---
 

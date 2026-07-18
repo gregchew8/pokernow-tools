@@ -5,6 +5,7 @@ gg.csv
 
 # Avoid committing browser login cookies and session tokens
 chrome-profile/
+chrome-profile-old/
 chrome-profile-test/
 auth.json
 
@@ -33,3 +34,16 @@ playwright-browsers/
 test_*.py
 dump_*.py
 screen.png
+
+# Runtime / application scripts (not tracked – live in local repo only)
+announce_games.py
+auto_settle.py
+login.py
+pokernow_settlement.py
+requirements.txt
+send_pending_email.py
+setup_poker_auth.py
+sync_players.py
+sync_to_drive.sh
+update_calendar.py
+web_ui.py
