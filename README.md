@@ -25,7 +25,7 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
    - Creates/updates game entries dynamically in Google Calendar.
 4. **Auto Settlement Engine** (`auto_settle.py` & `pokernow_settlement.py`)
    - Automatically runs morning calculations, downloads cashout CSVs, optimizes transactions, generates HTML reports, and emails payouts.
-    - **Remote Web UI Control Panel** (`web_ui.py`)
+      - **Remote Web UI Control Panel** (`web_ui.py`)
       - Serves a secure, zero-dependency local dashboard on port `8080` (accessible over Tailscale).
       - Allows triggering announcer and settlement scripts manually with log outputs visible in real time.
       - **Diagnostic Advisor**: Automatically parses and triages stdout/stderr outputs to identify common issues (e.g., SMTP auth failures, missing Playwright executables, missing player mappings) and displays clear recovery steps.
@@ -37,6 +37,19 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
       - **Clipboard Shortcuts**: Copy buttons next to each console log panel allow for quick sharing/debugging of stack traces.
       - **Static Settlement Inputs**: Settlement UI has been redesigned to use dark-themed static input fields instead of annoying popup browser prompts, allowing seamless copy/pasting from external tabs.
       - **Decoupled Ad-Hoc Sessions & Kill Switch**: Allows you to run custom ad-hoc tables independent of the main schedule. Alternatively, flip the new **Kill Switch** toggle on the Schedule Editor to cleanly skip tonight's scheduled automatic table creation.
+      - **Player Performance Analytics & Database Viewer** (`/analytics`)
+        - Displays a premium dark-themed performance dashboard showing cumulative earnings trajectories, win rates, avg buy-ins, total buy-ins, profit per session, and unique games played.
+        - **Quick Date Filters**: Quick links for `Last Month | Last 3 Months | Last Year | Last 2 Years | All Time` automatically calculate date ranges and dynamically redraw charts and graphs.
+        - **Database & Session History**: Displays all sessions in Postgres in a chronological table.
+        - **Single-Click Session Deletion**: Includes a secure deletion button next to each game date. Prompts a confirmation dialog, deletes the session and associated player records, and instantly refreshes the charts.
+      - **Access & PIN security**:
+        - Hides sensitive outputs (such as activity logs or custom admin panels) behind a 4-digit PIN lock.
+        - Stores the target PIN as a SHA-256 hash to prevent raw code exposure in the browser, and uses native browser cryptography to validate inputs.
+        - Retains unlock status securely using browser `sessionStorage`.
+        - Enabled by setting the `ADMIN_PIN` variable in your `.env` or Railway panel (defaults to fully unlocked if blank).
+        - Any elements containing the `admin-only` CSS class will automatically hide/lock when the PIN is enabled.
+    - **Historical Group Settlements Importer** (`import_text_settlements.py`)
+      - Scrapes archived Google Groups payout announcements, computes individual player net profits, ignores duplicate dates, and automatically backfills historical session records directly to PostgreSQL.
     - **Replication Script** (`sync_to_drive.sh`)
       - Replicates local changes and logs back to your Google Drive backup.
 
@@ -156,6 +169,3 @@ The dedicated `/analytics` route offers an interactive, real-time visualization 
 5. **Cumulative Net Trajectory Chart**:
    - Plot trajectories for multiple players at once. Trajectories are plotted in dollars (database cent values scaled by 100).
    - Selecting a losing player (e.g., `@zardaloo`) scales the chart's y-axis to correctly display negative and positive boundaries.
-
-
-
