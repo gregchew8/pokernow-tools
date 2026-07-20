@@ -31,7 +31,31 @@ load_env()
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN")
 if not AGENT_TOKEN:
     print("[WARNING] AGENT_TOKEN is not set in environment or .env file!")
-
+def log_admin_activity(email, action, details="", ip=""):
+    activity_file = os.path.join(WORKING_DIR, "output", "admin_activity.json")
+    os.makedirs(os.path.dirname(activity_file), exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = {
+        "time": timestamp,
+        "email": email or "Unknown Admin",
+        "action": action,
+        "details": details,
+        "ip": ip or "Unknown IP"
+    }
+    logs = []
+    try:
+        if os.path.exists(activity_file):
+            with open(activity_file, "r") as f:
+                logs = json.load(f)
+    except Exception as e:
+        print(f"[Agent] Error reading admin_activity.json: {e}")
+    logs.insert(0, entry)
+    logs = logs[:500]
+    try:
+        with open(activity_file, "w") as f:
+            json.dump(logs, f, indent=2)
+    except Exception as e:
+        print(f"[Agent] Error writing to admin_activity.json: {e}")
 # Thread-safe status trackers for running subprocesses
 status_lock = threading.Lock()
 running_tasks = {
@@ -621,12 +645,28 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Agent] Error reading schedule.json: {e}")
             self.wfile.write(json.dumps(schedule_data).encode("utf-8"))
+        elif path == "/api/activity-logs":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            activity_file = os.path.join(WORKING_DIR, "output", "admin_activity.json")
+            logs = []
+            if os.path.exists(activity_file):
+                try:
+                    with open(activity_file, "r") as f:
+                        logs = json.load(f)
+                except Exception as e:
+                    print(f"[Agent] Error reading admin_activity.json: {e}")
+            self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
     def do_POST(self):
         if not self.check_token():
             return
+
+        admin_email = self.headers.get("X-Admin-Email")
+        admin_ip = self.headers.get("X-Admin-IP")
 
         parsed_path = urllib.parse.urlparse(self.path)
         path = parsed_path.path
@@ -700,17 +740,23 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
         elif path == "/api/run-announcer":
             content_length = int(self.headers.get('Content-Length', 0))
             cmd = [sys.executable, "announce_games.py"]
+            test_flag = False
+            draft_flag = False
             if content_length > 0:
                 try:
                     post_data = self.rfile.read(content_length)
                     payload = json.loads(post_data.decode("utf-8"))
-                    if payload.get("test", False):
+                    test_flag = payload.get("test", False)
+                    draft_flag = payload.get("draft", False)
+                    if test_flag:
                         cmd += ["--test"]
-                    if payload.get("draft", False):
+                    if draft_flag:
                         cmd += ["--draft"]
                 except Exception as e:
                     print(f"[Agent] Error parsing run-announcer payload: {e}")
             success = run_script_in_background("announcer", cmd)
+            if success and admin_email:
+                log_admin_activity(admin_email, "Ran Announcer", f"test={test_flag}, draft={draft_flag}", admin_ip)
             self.send_response(200 if success else 409)
             self.send_header("Content-type", "application/json")
             self.end_headers()
@@ -741,6 +787,8 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 cmd += ["--force"]
 
             success = run_script_in_background("settlement", cmd)
+            if success and admin_email:
+                log_admin_activity(admin_email, "Ran Settlement", f"test={is_test}, draft={is_draft}", admin_ip)
             self.send_response(200 if success else 409)
             self.send_header("Content-type", "application/json")
             self.end_headers()
@@ -755,6 +803,8 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 with open(schedule_path, "w") as f:
                     json.dump(new_schedule, f, indent=4)
                 
+                if admin_email:
+                    log_admin_activity(admin_email, "Updated Schedule", "", admin_ip)
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
@@ -784,6 +834,10 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(post_data.decode("utf-8"))
                 if isinstance(payload, dict) and "config" in payload:
+                    success = False
+                    # trigger run-adhoc
+                    # logic remains same, let's keep success tracking...
+                    # we will wrap success logic and then log_admin_activity(admin_email, "Ran Ad-hoc Session", "", admin_ip)
                     adhoc_config = payload["config"]
                     is_draft = payload.get("draft", False)
                 else:
@@ -937,6 +991,24 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif path == "/api/log-activity":
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    email = payload.get("email")
+                    action = payload.get("action")
+                    details = payload.get("details", "")
+                    ip = payload.get("ip", "")
+                    log_admin_activity(email, action, details, ip)
+                except Exception as e:
+                    print(f"[Agent] Error logging activity: {e}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            return
         else:
             self.send_error(404, "Not Found")
 
