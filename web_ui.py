@@ -1222,12 +1222,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         <!-- Summary Cards -->
         <div class="stats-summary-row">
-            <div class="summary-card">
+            <div class="summary-card" title="The player with the highest cumulative net profit (total cashouts minus total buy-ins) across all tracked sessions." style="cursor: help;">
                 <div class="summary-card-title">Top Performer 🏆</div>
                 <div id="summary-top-player" class="summary-card-value" style="color: var(--success);">--</div>
                 <div id="summary-top-net" class="summary-card-desc">Net: $0</div>
             </div>
-            <div class="summary-card">
+            <div class="summary-card" title="The player with the lowest cumulative net profit (largest overall loss) across all tracked sessions." style="cursor: help;">
                 <div class="summary-card-title">Lowest Performer 📉</div>
                 <div id="summary-bottom-player" class="summary-card-value" style="color: var(--danger);">--</div>
                 <div id="summary-bottom-net" class="summary-card-desc">Net: $0</div>
@@ -1382,13 +1382,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
             const sessions = data.sessions;
             
             if (stats && stats.length > 0) {
-                const top = stats[0];
-                document.getElementById('summary-top-player').textContent = top.player_nickname;
-                document.getElementById('summary-top-net').innerHTML = `Net: <span style="color:var(--success); font-weight:600;">+$${top.total_net.toLocaleString()}</span>`;
+                // Sort a copy of stats by net descending to identify actual top and lowest performers
+                const sortedByNet = [...stats].sort((a, b) => b.total_net - a.total_net);
+                const top = sortedByNet[0];
+                const bottom = sortedByNet[sortedByNet.length - 1];
                 
-                const bottom = stats[stats.length - 1];
+                document.getElementById('summary-top-player').textContent = top.player_nickname;
+                document.getElementById('summary-top-net').innerHTML = `Net: <span style="color:var(--success); font-weight:600;">${top.total_net >= 0 ? '+' : ''}$${top.total_net.toLocaleString()}</span>`;
+                
                 document.getElementById('summary-bottom-player').textContent = bottom.player_nickname;
-                document.getElementById('summary-bottom-net').innerHTML = `Net: <span style="color:var(--danger); font-weight:600;">-$${Math.abs(bottom.total_net).toLocaleString()}</span>`;
+                document.getElementById('summary-bottom-net').innerHTML = `Net: <span style="color:var(--danger); font-weight:600;">${bottom.total_net >= 0 ? '+' : ''}$${bottom.total_net.toLocaleString()}</span>`;
             } else {
                 document.getElementById('summary-top-player').textContent = '--';
                 document.getElementById('summary-top-net').textContent = 'Net: $0';
