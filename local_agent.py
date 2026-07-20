@@ -521,6 +521,7 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                         pending_email = {
                             "has_draft": True,
                             "subject": draft_data.get("subject"),
+                            "body": draft_data.get("body"),
                             "type": draft_data.get("type")
                         }
                 except:
