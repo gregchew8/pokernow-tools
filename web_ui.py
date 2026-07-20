@@ -1105,6 +1105,37 @@ class WebUIHandler(BaseHTTPRequestHandler):
             font-size: 0.75rem;
             color: var(--text-muted);
         }
+        /* Custom Instant Tooltip */
+        .custom-tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .custom-tooltip .tooltip-text {
+            visibility: hidden;
+            width: 220px;
+            background-color: #1e293b;
+            color: #f8fafc;
+            text-align: center;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 100;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.15s ease-in-out;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+            font-size: 0.75rem;
+            font-weight: normal;
+            pointer-events: none;
+            white-space: normal;
+        }
+        .custom-tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
         .analytics-main-grid {
             display: grid;
             grid-template-columns: 1fr;
@@ -1222,15 +1253,17 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         <!-- Summary Cards -->
         <div class="stats-summary-row">
-            <div class="summary-card" title="The player with the highest cumulative net profit (total cashouts minus total buy-ins) across all tracked sessions." style="cursor: help;">
+            <div class="summary-card custom-tooltip" style="cursor: help;">
                 <div class="summary-card-title">Top Performer 🏆</div>
                 <div id="summary-top-player" class="summary-card-value" style="color: var(--success);">--</div>
                 <div id="summary-top-net" class="summary-card-desc">Net: $0</div>
+                <span class="tooltip-text">The player with the highest cumulative net profit (total cashouts minus total buy-ins) across all tracked sessions.</span>
             </div>
-            <div class="summary-card" title="The player with the lowest cumulative net profit (largest overall loss) across all tracked sessions." style="cursor: help;">
+            <div class="summary-card custom-tooltip" style="cursor: help;">
                 <div class="summary-card-title">Lowest Performer 📉</div>
                 <div id="summary-bottom-player" class="summary-card-value" style="color: var(--danger);">--</div>
                 <div id="summary-bottom-net" class="summary-card-desc">Net: $0</div>
+                <span class="tooltip-text">The player with the lowest cumulative net profit (largest overall loss) across all tracked sessions.</span>
             </div>
             <div class="summary-card">
                 <div class="summary-card-title">Total Games Tracked</div>
@@ -1415,21 +1448,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     const netClass = s.total_net >= 0 ? 'badge-positive' : 'badge-negative';
                     const winRate = ((s.win_count / s.total_sessions) * 100).toFixed(0);
                     
-                    let hoverTitle = '';
-                    let tdStyle = 'padding: 12px 8px; vertical-align: middle;';
-                    let nameStyle = 'font-weight: 600; display: inline-block;';
+                    let nameHtml = `<div style="font-weight: 600;">${s.player_nickname}</div>`;
                     if (s.aliases && s.aliases.length > 0) {
                         const filtered = s.aliases.filter(a => a !== s.player_nickname);
                         if (filtered.length > 0) {
-                            hoverTitle = `title="Poker Now Nicknames: ${filtered.join(', ')}"`;
-                            tdStyle += ' cursor: help;';
-                            nameStyle += ' text-decoration: underline dotted var(--text-muted);';
+                            nameHtml = `
+                                <div class="custom-tooltip" style="cursor: help;">
+                                    <div style="font-weight: 600; text-decoration: underline dotted var(--text-muted); display: inline-block;">${s.player_nickname}</div>
+                                    <span class="tooltip-text">Aliases: ${filtered.join(', ')}</span>
+                                </div>
+                            `;
                         }
                     }
                     
                     tr.innerHTML = `
-                        <td style="${tdStyle}" ${hoverTitle}>
-                            <div style="${nameStyle}">${s.player_nickname}</div>
+                        <td style="padding: 12px 8px; vertical-align: middle;">
+                            ${nameHtml}
                         </td>
                         <td>${s.total_sessions}</td>
                         <td>${winRate}%</td>
