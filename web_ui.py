@@ -1624,8 +1624,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 });
             }
 
-            const checkedBoxes = Array.from(document.querySelectorAll('#analytics-player-list input[type="checkbox"]:checked'));
-            const selectedPlayerIds = checkedBoxes.map(cb => cb.value);
             const selectedPlayerNames = checkedBoxes.map(cb => cb.getAttribute('data-name'));
             const sessionDates = sessions.map(s => s.date).reverse(); // Order chronological for chart
             
