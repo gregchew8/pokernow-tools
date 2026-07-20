@@ -87,6 +87,30 @@ def send_otp_email(receiver_email, otp_code):
         print(traceback.format_exc())
     return False
 
+def log_activity_to_agent(email, action, details="", ip=""):
+    import urllib.request
+    import json
+    if not AGENT_URL or not AGENT_TOKEN:
+        return
+    target_url = f"{AGENT_URL}/api/log-activity"
+    headers = {
+        "X-Agent-Token": AGENT_TOKEN,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    payload = {
+        "email": email,
+        "action": action,
+        "details": details,
+        "ip": ip
+    }
+    try:
+        req = urllib.request.Request(target_url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            pass
+    except Exception as e:
+        print(f"[CloudUI] Error logging activity to agent: {e}")
+
 class CloudUIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # We can enable standard logs or keep it clean
@@ -317,11 +341,19 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "Bad Gateway: Mac Mini local agent not configured"}).encode("utf-8"))
             return
 
+        session_id = self.get_session_id()
+        email = ""
+        if session_id and session_id in session_store:
+            email = session_store[session_id].get("email", "")
+        client_ip = self.headers.get("X-Forwarded-For") or self.client_address[0]
+
         # Forward the path and query string exactly to the agent
         target_url = f"{AGENT_URL}{self.path}"
         headers = {
             "X-Agent-Token": AGENT_TOKEN,
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "X-Admin-Email": email,
+            "X-Admin-IP": client_ip
         }
         if "Content-Type" in self.headers:
             headers["Content-Type"] = self.headers["Content-Type"]
@@ -370,6 +402,9 @@ class CloudUIHandler(BaseHTTPRequestHandler):
         elif path == "/logout":
             session_id = self.get_session_id()
             if session_id in session_store:
+                email = session_store[session_id].get("email")
+                if email:
+                    log_activity_to_agent(email, "Logout", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
                 del session_store[session_id]
             self.send_response(303)
             self.send_header("Set-Cookie", "session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax")
@@ -390,6 +425,93 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.end_headers()
             # Serve the standard dashboard
             dashboard_html = WebUIHandler.get_html_dashboard(None)
+            
+            # Inject Admin activity logs card
+            admin_logs_html = """
+            <!-- Admin Logs Section -->
+            <div class="card full-width">
+                <h2>Admin Activity Logs</h2>
+                <div style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(15,23,42,0.4); padding: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; font-family:'Outfit',sans-serif;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-weight: 600;">
+                                <th style="padding: 8px;">Time</th>
+                                <th style="padding: 8px;">Admin</th>
+                                <th style="padding: 8px;">Action</th>
+                                <th style="padding: 8px;">Details</th>
+                                <th style="padding: 8px;">IP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-activity-table-body">
+                            <tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">Loading activity logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <script>
+            function loadAdminActivityLogs() {
+                fetch('/api/activity-logs')
+                    .then(r => r.json())
+                    .then(data => {
+                        const tbody = document.getElementById('admin-activity-table-body');
+                        if (!tbody) return;
+                        tbody.innerHTML = '';
+                        if (!data.logs || data.logs.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">No activity logged yet.</td></tr>';
+                            return;
+                        }
+                        data.logs.forEach(log => {
+                            const tr = document.createElement('tr');
+                            tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                            tr.style.color = '#e2e8f0';
+                            
+                            const tdTime = document.createElement('td');
+                            tdTime.style.padding = '8px';
+                            tdTime.style.whiteSpace = 'nowrap';
+                            tdTime.textContent = log.time;
+                            
+                            const tdAdmin = document.createElement('td');
+                            tdAdmin.style.padding = '8px';
+                            tdAdmin.style.color = '#a5b4fc';
+                            tdAdmin.textContent = log.email;
+                            
+                            const tdAction = document.createElement('td');
+                            tdAction.style.padding = '8px';
+                            tdAction.style.fontWeight = '600';
+                            if (log.action.includes('login') || log.action.includes('Login')) {
+                                tdAction.style.color = '#34d399';
+                            } else if (log.action.includes('logout') || log.action.includes('Logout')) {
+                                tdAction.style.color = '#f87171';
+                            } else {
+                                tdAction.style.color = '#60a5fa';
+                            }
+                            tdAction.textContent = log.action;
+                            
+                            const tdDetails = document.createElement('td');
+                            tdDetails.style.padding = '8px';
+                            tdDetails.textContent = log.details || '-';
+                            
+                            const tdIp = document.createElement('td');
+                            tdIp.style.padding = '8px';
+                            tdIp.style.color = '#94a3b8';
+                            tdIp.textContent = log.ip || '-';
+                            
+                            tr.appendChild(tdTime);
+                            tr.appendChild(tdAdmin);
+                            tr.appendChild(tdAction);
+                            tr.appendChild(tdDetails);
+                            tr.appendChild(tdIp);
+                            tbody.appendChild(tr);
+                        });
+                    })
+                    .catch(err => console.error("Error loading admin logs:", err));
+            }
+            setTimeout(loadAdminActivityLogs, 1000);
+            setInterval(loadAdminActivityLogs, 10000);
+            </script>
+            """
+            dashboard_html = dashboard_html.replace("<!-- Logs Section -->", admin_logs_html + "<!-- Logs Section -->")
             
             # Inject Session HUD, Renew button, Logout, and Active Sessions Box
             injected_html = """
@@ -591,6 +713,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 "email": email,
                 "expires": time.time() + 1800  # 30 minutes session
             }
+            log_activity_to_agent(email, "Login", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
 
             self.send_response(303)
             self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax")
