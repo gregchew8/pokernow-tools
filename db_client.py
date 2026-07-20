@@ -211,8 +211,18 @@ class DBClient:
                 buy_in = r["buy_in"]
                 net = r["net"]
                 
+            import re
             venmo_id = venmo_map.get(nickname.strip().lower())
-            resolved_id = venmo_id if venmo_id else nickname
+            if not venmo_id:
+                # Strip trailing numbers, spaces, and punctuation (e.g. "Billy Berns 1" -> "Billy Berns")
+                stripped = re.sub(r'[\s\d\-\#\_!]+$', '', nickname).strip().lower()
+                venmo_id = venmo_map.get(stripped)
+            
+            # Filter out entries not tied to a valid Venmo ID (e.g. placeholders, unmapped players)
+            if not venmo_id or not venmo_id.startswith('@'):
+                continue
+                
+            resolved_id = venmo_id
             
             if resolved_id not in groups:
                 groups[resolved_id] = {
@@ -221,12 +231,14 @@ class DBClient:
                     "buy_ins": [],
                     "nets": [],
                     "sessions_count": 0,
-                    "win_count": 0
+                    "win_count": 0,
+                    "aliases": set()
                 }
             
             groups[resolved_id]["buy_ins"].append(buy_in)
             groups[resolved_id]["nets"].append(net)
             groups[resolved_id]["sessions_count"] += 1
+            groups[resolved_id]["aliases"].add(nickname)
             if net > 0:
                 groups[resolved_id]["win_count"] += 1
                 
@@ -236,6 +248,9 @@ class DBClient:
             total_buy_in = sum(g["buy_ins"]) / 100.0
             avg_buy_in = (sum(g["buy_ins"]) / len(g["buy_ins"])) / 100.0 if g["buy_ins"] else 0.0
             
+            # Sort aliases and omit the Venmo ID itself if it matches
+            sorted_aliases = sorted(list(g["aliases"]))
+            
             result.append({
                 "player_nickname": g["player_nickname"],
                 "player_id": g["player_id"],
@@ -243,7 +258,8 @@ class DBClient:
                 "total_net": round(total_net, 2),
                 "total_buy_in": round(total_buy_in, 2),
                 "avg_buy_in": round(avg_buy_in, 2),
-                "win_count": g["win_count"]
+                "win_count": g["win_count"],
+                "aliases": sorted_aliases
             })
             
         result.sort(key=lambda x: x["player_nickname"].lower())
@@ -279,8 +295,16 @@ class DBClient:
                 net = r["net"]
                 date = r["ledger_date"]
                 
+            import re
             venmo_id = venmo_map.get(nickname.strip().lower())
-            resolved_id = venmo_id if venmo_id else nickname
+            if not venmo_id:
+                stripped = re.sub(r'[\s\d\-\#\_!]+$', '', nickname).strip().lower()
+                venmo_id = venmo_map.get(stripped)
+            
+            if not venmo_id or not venmo_id.startswith('@'):
+                continue
+                
+            resolved_id = venmo_id
             
             key = (resolved_id, date)
             history_map[key] = history_map.get(key, 0) + net

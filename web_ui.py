@@ -1413,16 +1413,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     const winRate = ((s.win_count / s.total_sessions) * 100).toFixed(0);
                     
                     let hoverTitle = '';
+                    let tdStyle = 'padding: 12px 8px; vertical-align: middle;';
+                    let nameStyle = 'font-weight: 600; display: inline-block;';
                     if (s.aliases && s.aliases.length > 0) {
                         const filtered = s.aliases.filter(a => a !== s.player_nickname);
                         if (filtered.length > 0) {
                             hoverTitle = `title="Poker Now Nicknames: ${filtered.join(', ')}"`;
+                            tdStyle += ' cursor: help;';
+                            nameStyle += ' text-decoration: underline dotted var(--text-muted);';
                         }
                     }
                     
                     tr.innerHTML = `
-                        <td style="padding: 12px 8px; vertical-align: middle; cursor: help;" ${hoverTitle}>
-                            <div style="font-weight: 600; text-decoration: underline dotted var(--text-muted); display: inline-block;">${s.player_nickname}</div>
+                        <td style="${tdStyle}" ${hoverTitle}>
+                            <div style="${nameStyle}">${s.player_nickname}</div>
                         </td>
                         <td>${s.total_sessions}</td>
                         <td>${winRate}%</td>
