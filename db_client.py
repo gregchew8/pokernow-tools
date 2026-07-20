@@ -159,16 +159,31 @@ class DBClient:
         self.commit()
         return True
 
+    def load_venmo_mapping(self):
+        mapping = {}
+        import csv
+        db_dir = os.path.dirname(os.path.abspath(__file__))
+        filepath = os.path.join(db_dir, "payment_info.csv")
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, newline='', encoding='utf-8') as file:
+                    reader = csv.reader(file)
+                    headers = [h.strip() for h in next(reader)]
+                    for row in reader:
+                        mapped_row = dict(zip(headers, row))
+                        nickname = mapped_row.get("PN Alias")
+                        venmo = mapped_row.get("Venmo / other")
+                        if nickname and venmo:
+                            mapping[nickname.strip().lower()] = venmo.strip()
+            except Exception as e:
+                print(f"[DBClient] Error reading payment_info.csv: {e}")
+        return mapping
+
     def get_player_stats(self, start_date=None, end_date=None):
+        venmo_map = self.load_venmo_mapping()
+        
         query = """
-            SELECT 
-                player_nickname,
-                player_id,
-                COUNT(id) as total_sessions,
-                SUM(net) as total_net,
-                SUM(buy_in) as total_buy_in,
-                AVG(buy_in) as avg_buy_in,
-                SUM(CASE WHEN net > 0 THEN 1 ELSE 0 END) as win_count
+            SELECT player_nickname, player_id, buy_in, net
             FROM player_ledger_records
             WHERE 1=1
         """
@@ -180,37 +195,63 @@ class DBClient:
             query += " AND ledger_date <= ?"
             params.append(end_date)
             
-        query += " GROUP BY player_nickname, player_id ORDER BY total_net DESC"
-        
         cursor = self.execute(query, tuple(params))
         rows = cursor.fetchall()
         
-        # Convert to dictionary output
-        result = []
+        groups = {}
         for r in rows:
             if self.is_postgres:
-                result.append({
-                    "player_nickname": r[0],
-                    "player_id": r[1],
-                    "total_sessions": int(r[2]),
-                    "total_net": int(r[3]),
-                    "total_buy_in": int(r[4]),
-                    "avg_buy_in": float(r[5]),
-                    "win_count": int(r[6])
-                })
+                nickname = r[0]
+                pid = r[1]
+                buy_in = int(r[2])
+                net = int(r[3])
             else:
-                result.append({
-                    "player_nickname": r["player_nickname"],
-                    "player_id": r["player_id"],
-                    "total_sessions": r["total_sessions"],
-                    "total_net": r["total_net"],
-                    "total_buy_in": r["total_buy_in"],
-                    "avg_buy_in": r["avg_buy_in"],
-                    "win_count": r["win_count"]
-                })
+                nickname = r["player_nickname"]
+                pid = r["player_id"]
+                buy_in = r["buy_in"]
+                net = r["net"]
+                
+            venmo_id = venmo_map.get(nickname.strip().lower())
+            resolved_id = venmo_id if venmo_id else nickname
+            
+            if resolved_id not in groups:
+                groups[resolved_id] = {
+                    "player_nickname": resolved_id,
+                    "player_id": resolved_id,
+                    "buy_ins": [],
+                    "nets": [],
+                    "sessions_count": 0,
+                    "win_count": 0
+                }
+            
+            groups[resolved_id]["buy_ins"].append(buy_in)
+            groups[resolved_id]["nets"].append(net)
+            groups[resolved_id]["sessions_count"] += 1
+            if net > 0:
+                groups[resolved_id]["win_count"] += 1
+                
+        result = []
+        for rid, g in groups.items():
+            total_net = sum(g["nets"]) / 100.0
+            total_buy_in = sum(g["buy_ins"]) / 100.0
+            avg_buy_in = (sum(g["buy_ins"]) / len(g["buy_ins"])) / 100.0 if g["buy_ins"] else 0.0
+            
+            result.append({
+                "player_nickname": g["player_nickname"],
+                "player_id": g["player_id"],
+                "total_sessions": g["sessions_count"],
+                "total_net": round(total_net, 2),
+                "total_buy_in": round(total_buy_in, 2),
+                "avg_buy_in": round(avg_buy_in, 2),
+                "win_count": g["win_count"]
+            })
+            
+        result.sort(key=lambda x: x["player_nickname"].lower())
         return result
 
     def get_player_history(self, start_date=None, end_date=None):
+        venmo_map = self.load_venmo_mapping()
+        
         query = """
             SELECT player_nickname, player_id, net, ledger_date
             FROM player_ledger_records
@@ -224,25 +265,34 @@ class DBClient:
             query += " AND ledger_date <= ?"
             params.append(end_date)
             
-        query += " ORDER BY ledger_date ASC, player_nickname ASC"
-        
         cursor = self.execute(query, tuple(params))
         rows = cursor.fetchall()
         
-        result = []
+        history_map = {}
         for r in rows:
             if self.is_postgres:
-                result.append({
-                    "player_nickname": r[0],
-                    "player_id": r[1],
-                    "net": int(r[2]),
-                    "ledger_date": r[3]
-                })
+                nickname = r[0]
+                net = int(r[2])
+                date = r[3]
             else:
-                result.append({
-                    "player_nickname": r["player_nickname"],
-                    "player_id": r["player_id"],
-                    "net": r["net"],
-                    "ledger_date": r["ledger_date"]
-                })
+                nickname = r["player_nickname"]
+                net = r["net"]
+                date = r["ledger_date"]
+                
+            venmo_id = venmo_map.get(nickname.strip().lower())
+            resolved_id = venmo_id if venmo_id else nickname
+            
+            key = (resolved_id, date)
+            history_map[key] = history_map.get(key, 0) + net
+            
+        result = []
+        for (resolved_id, date), net in history_map.items():
+            result.append({
+                "player_nickname": resolved_id,
+                "player_id": resolved_id,
+                "net": round(net / 100.0, 2),
+                "ledger_date": date
+            })
+            
+        result.sort(key=lambda x: (x["ledger_date"], x["player_nickname"].lower()))
         return result
