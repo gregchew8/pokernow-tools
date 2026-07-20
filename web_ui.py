@@ -1115,15 +1115,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
             width: 220px;
             background-color: #1e293b;
             color: #f8fafc;
-            text-align: center;
+            text-align: left;
             border: 1px solid #475569;
             border-radius: 6px;
             padding: 8px;
             position: absolute;
             z-index: 100;
             bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            transform: none;
             opacity: 0;
             transition: opacity 0.15s ease-in-out;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
@@ -1239,7 +1239,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <input type="date" id="filter-end-date" class="filter-input" onchange="loadAnalyticsData()">
                 </div>
                 <div class="filter-group" style="flex: 2; min-width: 250px;">
-                    <label>Select Players to Compare</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                        <label style="margin: 0;">Select Players to Compare</label>
+                        <div style="display: flex; gap: 0.5rem; font-size: 0.75rem; font-family: 'Outfit', sans-serif;">
+                            <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="selectAllPlayers(true)">Select All</span>
+                            <span style="color: var(--text-muted);">|</span>
+                            <span style="color: var(--text-muted); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="selectAllPlayers(false)">Clear All</span>
+                        </div>
+                    </div>
                     <div id="analytics-player-list" class="player-checkbox-list">
                         <div style="padding: 10px; color: var(--text-muted); font-size: 0.85rem;">Loading players...</div>
                     </div>
@@ -1338,6 +1345,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if (originalStatsData) {
                 updateAnalyticsUI(originalStatsData);
             }
+        }
+
+        function selectAllPlayers(checked) {
+            const checkboxes = document.querySelectorAll('#analytics-player-list input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                cb.checked = checked;
+            });
+            updateChartsOnly();
         }
 
         function resetFilters() {
