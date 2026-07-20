@@ -18,18 +18,30 @@ def run_applescript(script):
 def inject_js(js_code, target_url="pokernow.com"):
     # Escape quotes and backslashes for AppleScript string literal
     escaped_js = js_code.replace('\\', '\\\\').replace('"', '\\"')
-    script = f"""
-    tell application "Google Chrome"
-        repeat with w in windows
-            repeat with t in tabs of w
-                if URL of t contains "{target_url}" then
-                    execute t javascript "{escaped_js}"
-                    return
-                end if
+    
+    if target_url == "pokernow.com" or not target_url:
+        # Default to executing on the active tab of the front window to avoid mixing up multiple tabs
+        script = f"""
+        tell application "Google Chrome"
+            if (count of windows) > 0 then
+                execute active tab of front window javascript "{escaped_js}"
+            end if
+        end tell
+        """
+    else:
+        # Target the specific tab matching the room URL
+        script = f"""
+        tell application "Google Chrome"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if URL of t contains "{target_url}" then
+                        execute t javascript "{escaped_js}"
+                        return
+                    end if
+                end repeat
             end repeat
-        end repeat
-    end tell
-    """
+        end tell
+        """
     return run_applescript(script)
 
 def run(tables_to_create):
