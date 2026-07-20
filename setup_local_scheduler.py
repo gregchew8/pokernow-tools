@@ -200,7 +200,7 @@ def main():
     web_ui_content = WEB_UI_PLIST.format(
         label=WEB_UI_LABEL,
         python_path=python_path,
-        script_path=os.path.join(working_dir, "web_ui.py"),
+        script_path=os.path.join(working_dir, "local_agent.py"),
         working_dir=working_dir
     )
 
