@@ -9,6 +9,8 @@ import re
 import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
+import smtplib
+from email.mime.text import MIMEText
 
 PORT = 8081
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -629,7 +631,73 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
         parsed_path = urllib.parse.urlparse(self.path)
         path = parsed_path.path
 
-        if path == "/api/run-announcer":
+        if path == "/api/send-otp-email":
+            content_length = int(self.headers.get('Content-Length', 0))
+            success = False
+            error_msg = ""
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    receiver = payload.get("email")
+                    otp_code = payload.get("otp")
+                    
+                    # Fetch SMTP details from env loaded from .env
+                    sender = os.environ.get("EMAIL_SENDER")
+                    password = os.environ.get("EMAIL_PASSWORD")
+                    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+                    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+                    
+                    if receiver and otp_code and sender and password:
+                        subject = "LCR Poker Admin - One-Time Verification Code"
+                        body = f"""
+                        Hello,
+
+                        Your one-time verification code to access the Poker Now Control Panel is:
+
+                        ===========================
+                                 {otp_code}
+                        ===========================
+
+                        This code is valid for the next 10 minutes. If you did not request this login, please ignore this email.
+
+                        Best regards,
+                        LCR Poker Admins
+                        """
+                        msg = MIMEText(body)
+                        msg["Subject"] = subject
+                        msg["From"] = f"LCR Admins <{sender}>"
+                        msg["To"] = receiver
+                        
+                        try:
+                            if smtp_port == 465:
+                                server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+                            else:
+                                server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+                                server.starttls()
+                            server.login(sender, password)
+                            server.sendmail(sender, [receiver], msg.as_string())
+                            server.quit()
+                            print(f"[Agent] Successfully sent OTP email to {receiver} on behalf of Cloud UI")
+                            success = True
+                        except Exception as e:
+                            import traceback
+                            error_msg = f"SMTP error: {e}"
+                            print(f"[Agent] SMTP failure: {error_msg}")
+                            print(traceback.format_exc())
+                    else:
+                        error_msg = "Missing fields or SMTP credentials in .env on Mac Mini"
+                except Exception as e:
+                    error_msg = f"Request parsing error: {e}"
+                    print(f"[Agent] Error sending OTP: {error_msg}")
+            
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success, "error": error_msg}).encode("utf-8"))
+            return
+
+        elif path == "/api/run-announcer":
             content_length = int(self.headers.get('Content-Length', 0))
             cmd = [sys.executable, "announce_games.py"]
             if content_length > 0:

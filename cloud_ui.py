@@ -49,51 +49,42 @@ otp_store = {}        # email -> { "otp": str, "expires": float }
 session_store = {}    # session_id -> { "email": str, "expires": float }
 
 def send_otp_email(receiver_email, otp_code):
+    import urllib.request
+    import json
     import traceback
-    subject = "LCR Poker Admin - One-Time Verification Code"
-    body = f"""
-    Hello,
-
-    Your one-time verification code to access the Poker Now Control Panel is:
-
-    ===========================
-             {otp_code}
-    ===========================
-
-    This code is valid for the next 10 minutes. If you did not request this login, please ignore this email.
-
-    Best regards,
-    LCR Poker Admins
-    """
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = f"LCR Admins <{EMAIL_SENDER}>"
-    msg["To"] = receiver_email
-
-    print(f"[CloudUI] Preparing to send OTP to {receiver_email}")
-    print(f"[CloudUI] SMTP Configuration: Host={SMTP_HOST}, Port={SMTP_PORT}, Sender={EMAIL_SENDER}")
-
-    try:
-        print("[CloudUI] Connecting to SMTP server (10s timeout)...")
-        if SMTP_PORT == 465:
-            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10)
-        else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
-            print("[CloudUI] Sending STARTTLS...")
-            server.starttls()
-        
-        print("[CloudUI] Connected. Logging in...")
-        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        print("[CloudUI] Authenticated. Sending email...")
-        server.sendmail(EMAIL_SENDER, [receiver_email], msg.as_string())
-        print("[CloudUI] Email sent. Quitting session...")
-        server.quit()
-        print(f"[CloudUI] Successfully sent OTP email to {receiver_email}")
-        return True
-    except Exception as e:
-        print(f"[CloudUI] Error sending OTP email to {receiver_email}: {e}")
-        print(traceback.format_exc())
+    
+    print(f"[CloudUI] Delegating OTP email sending for {receiver_email} to Mac Mini local agent...")
+    if not AGENT_URL or not AGENT_TOKEN:
+        print("[CloudUI] Error: AGENT_URL or AGENT_TOKEN not configured. Cannot delegate email sending.")
         return False
+        
+    target_url = f"{AGENT_URL}/api/send-otp-email"
+    headers = {
+        "X-Agent-Token": AGENT_TOKEN,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "email": receiver_email,
+        "otp": otp_code
+    }
+    body_data = json.dumps(payload).encode("utf-8")
+    
+    req = urllib.request.Request(target_url, data=body_data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            if response.status == 200:
+                resp_data = json.loads(response.read().decode("utf-8"))
+                if resp_data.get("success"):
+                    print(f"[CloudUI] Local agent successfully sent the OTP email to {receiver_email}.")
+                    return True
+                else:
+                    print(f"[CloudUI] Local agent failed to send email: {resp_data.get('error')}")
+            else:
+                print(f"[CloudUI] Local agent returned status {response.status} when sending email.")
+    except Exception as e:
+        print(f"[CloudUI] Error connecting to local agent to send email: {e}")
+        print(traceback.format_exc())
+    return False
 
 class CloudUIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
