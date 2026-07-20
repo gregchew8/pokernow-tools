@@ -111,8 +111,6 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             del session_store[session_id]
             return False
         
-        # Extend session lifetime (sliding window of 7 days)
-        session["expires"] = time.time() + (7 * 24 * 3600)
         return True
 
     def serve_login_page(self, email_requested=None, error_msg=None):
@@ -392,7 +390,139 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.end_headers()
             # Serve the standard dashboard
             dashboard_html = WebUIHandler.get_html_dashboard(None)
+            
+            # Inject Session HUD, Renew button, Logout, and Active Sessions Box
+            injected_html = """
+            <div id="session-manager-widget" style="position:fixed; bottom:20px; right:20px; z-index:9999; font-family:'Outfit',sans-serif;">
+                <div id="session-pill" style="display:flex; align-items:center; gap:10px; background:rgba(22, 28, 45, 0.9); border:1px solid rgba(255,255,255,0.08); padding:8px 16px; border-radius:30px; box-shadow:0 10px 25px rgba(0,0,0,0.3); backdrop-filter:blur(8px); cursor:pointer; color:#e2e8f0; font-size:13px; font-weight:600; transition:all 0.3s; user-select:none;">
+                    <span id="session-countdown-text">Session: 30:00</span>
+                    <button id="btn-renew-session" style="background:#4f46e5; border:none; color:white; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:'Outfit',sans-serif;">Renew</button>
+                    <button id="btn-logout" style="background:#ef4444; border:none; color:white; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s; font-family:'Outfit',sans-serif;">Logout</button>
+                </div>
+                <div id="session-details-card" style="display:none; margin-top:10px; background:rgba(22, 28, 45, 0.95); border:1px solid rgba(255,255,255,0.08); width:280px; padding:15px; border-radius:12px; box-shadow:0 15px 35px rgba(0,0,0,0.4); backdrop-filter:blur(12px); color:#e2e8f0;">
+                    <h4 style="font-size:12px; text-transform:uppercase; color:#94a3b8; letter-spacing:0.05em; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:5px; margin-top:0;">Active Admin Sessions</h4>
+                    <div id="sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:150px; overflow-y:auto;">
+                    </div>
+                </div>
+            </div>
+            <script>
+            (function() {
+                let expiresTimestamp = Date.now() + 1800000;
+                function updateSessionsList() {
+                    fetch('/api/active-sessions')
+                        .then(r => r.json())
+                        .then(data => {
+                            const list = document.getElementById('sessions-list');
+                            list.innerHTML = '';
+                            data.sessions.forEach(s => {
+                                const diff = Math.max(0, Math.round(s.expires - Date.now()/1000));
+                                const mins = Math.floor(diff/60);
+                                const secs = diff%60;
+                                const timeStr = mins + ":" + (secs < 10 ? "0" : "") + secs;
+                                
+                                const item = document.createElement('div');
+                                item.style.display = 'flex';
+                                item.style.justifyContent = 'space-between';
+                                item.style.alignItems = 'center';
+                                item.style.fontSize = '12px';
+                                item.style.padding = '4px 0';
+                                
+                                const emailSpan = document.createElement('span');
+                                emailSpan.textContent = s.email + (s.is_current ? ' (You)' : '');
+                                emailSpan.style.fontWeight = s.is_current ? 'bold' : 'normal';
+                                emailSpan.style.color = s.is_current ? '#a5b4fc' : '#e2e8f0';
+                                
+                                const expSpan = document.createElement('span');
+                                expSpan.textContent = timeStr;
+                                expSpan.style.color = '#94a3b8';
+                                
+                                item.appendChild(emailSpan);
+                                item.appendChild(expSpan);
+                                list.appendChild(item);
+                                
+                                if (s.is_current) {
+                                    expiresTimestamp = s.expires * 1000;
+                                }
+                            });
+                        });
+                }
+                function tick() {
+                    const remaining = Math.max(0, Math.round((expiresTimestamp - Date.now()) / 1000));
+                    const mins = Math.floor(remaining / 60);
+                    const secs = remaining % 60;
+                    document.getElementById('session-countdown-text').textContent = "Session: " + mins + ":" + (secs < 10 ? "0" : "") + secs;
+                    
+                    const pill = document.getElementById('session-pill');
+                    if (remaining <= 300) {
+                        pill.style.border = '1px solid #ef4444';
+                        pill.style.boxShadow = '0 0 15px rgba(239, 68, 68, 0.2)';
+                    } else {
+                        pill.style.border = '1px solid rgba(255,255,255,0.08)';
+                        pill.style.boxShadow = '0 10px 25px rgba(0,0,0,0.3)';
+                    }
+                    if (remaining <= 0) {
+                        window.location.href = '/logout';
+                        return;
+                    }
+                    setTimeout(tick, 1000);
+                }
+                document.getElementById('session-pill').addEventListener('click', function(e) {
+                    if (e.target.tagName === 'BUTTON') return;
+                    const card = document.getElementById('session-details-card');
+                    card.style.display = card.style.display === 'none' ? 'block' : 'none';
+                    if (card.style.display === 'block') {
+                        updateSessionsList();
+                    }
+                });
+                document.getElementById('btn-renew-session').addEventListener('click', function() {
+                    fetch('/api/renew-session', { method: 'POST' })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.success) {
+                                expiresTimestamp = data.expires * 1000;
+                                updateSessionsList();
+                            } else {
+                                window.location.href = '/logout';
+                            }
+                        });
+                });
+                document.getElementById('btn-logout').addEventListener('click', function() {
+                    window.location.href = '/logout';
+                });
+                updateSessionsList();
+                tick();
+                setInterval(() => {
+                    const card = document.getElementById('session-details-card');
+                    if (card.style.display === 'block') {
+                        updateSessionsList();
+                    }
+                }, 5000);
+            })();
+            </script>
+            """
+            dashboard_html = dashboard_html.replace("</body>", injected_html + "</body>")
             self.wfile.write(dashboard_html.encode("utf-8"))
+            
+        elif path == "/api/active-sessions":
+            # Clean expired sessions
+            now = time.time()
+            expired_keys = [k for k, v in session_store.items() if now > v["expires"]]
+            for k in expired_keys:
+                del session_store[k]
+                
+            current_session_id = self.get_session_id()
+            sessions_list = []
+            for sid, info in session_store.items():
+                sessions_list.append({
+                    "email": info["email"],
+                    "expires": info["expires"],
+                    "is_current": (sid == current_session_id)
+                })
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"sessions": sessions_list}).encode("utf-8"))
+            return
             
         elif path.startswith("/api/"):
             self.proxy_to_agent("GET")
@@ -459,11 +589,11 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             session_id = secrets.token_hex(32)
             session_store[session_id] = {
                 "email": email,
-                "expires": time.time() + (7 * 24 * 3600)  # 7 days session
+                "expires": time.time() + 1800  # 30 minutes session
             }
 
             self.send_response(303)
-            self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age={7 * 24 * 3600}; HttpOnly; SameSite=Lax")
+            self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax")
             self.send_header("Location", "/")
             self.end_headers()
             return
@@ -474,6 +604,22 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+            return
+
+        if path == "/api/renew-session":
+            session_id = self.get_session_id()
+            if session_id in session_store:
+                session_store[session_id]["expires"] = time.time() + 1800 # 30 mins
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "expires": session_store[session_id]["expires"]}).encode("utf-8"))
+            else:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Unauthorized"}).encode("utf-8"))
             return
 
         if path.startswith("/api/"):
