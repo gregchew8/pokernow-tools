@@ -71,7 +71,7 @@ def run(tables_to_create):
         
         if idx > 0:
             print("Opening new tab for next table...")
-            inject_js("window.open('https://www.pokernow.com/start-game', '_blank');")
+            run_applescript('tell application "Google Chrome" to tell front window to make new tab with properties {URL:"https://www.pokernow.com/start-game"}')
             time.sleep(3)
         
         print("============================================================")
