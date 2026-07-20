@@ -35,7 +35,7 @@ load_env()
 # Configuration
 ALLOWED_EMAILS = [email.strip().lower() for email in os.environ.get("ALLOWED_EMAILS", "").split(",") if email.strip()]
 AGENT_URL = os.environ.get("AGENT_URL", "").strip().rstrip("/")
-AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "").strip()
+AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "").strip().strip('"').strip("'")
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
