@@ -61,7 +61,8 @@ def send_otp_email(receiver_email, otp_code):
     target_url = f"{AGENT_URL}/api/send-otp-email"
     headers = {
         "X-Agent-Token": AGENT_TOKEN,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     payload = {
         "email": receiver_email,
@@ -322,6 +323,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
         target_url = f"{AGENT_URL}{self.path}"
         headers = {
             "X-Agent-Token": AGENT_TOKEN,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         if "Content-Type" in self.headers:
             headers["Content-Type"] = self.headers["Content-Type"]
