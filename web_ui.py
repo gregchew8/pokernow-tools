@@ -1261,13 +1261,28 @@ class WebUIHandler(BaseHTTPRequestHandler):
         <div class="card full-width">
             <h2>Filters & Selection</h2>
             <div class="analytics-filters-card">
-                <div class="filter-group">
-                    <label for="filter-start-date">Start Date</label>
-                    <input type="date" id="filter-start-date" class="filter-input" onchange="loadAnalyticsData()">
-                </div>
-                <div class="filter-group">
-                    <label for="filter-end-date">End Date</label>
-                    <input type="date" id="filter-end-date" class="filter-input" onchange="loadAnalyticsData()">
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 2; min-width: 360px;">
+                    <div style="display: flex; gap: 1rem; width: 100%;">
+                        <div class="filter-group" style="margin: 0;">
+                            <label for="filter-start-date">Start Date</label>
+                            <input type="date" id="filter-start-date" class="filter-input" onchange="loadAnalyticsData()">
+                        </div>
+                        <div class="filter-group" style="margin: 0;">
+                            <label for="filter-end-date">End Date</label>
+                            <input type="date" id="filter-end-date" class="filter-input" onchange="loadAnalyticsData()">
+                        </div>
+                    </div>
+                    <div class="quick-date-links" style="display: flex; gap: 0.5rem; font-size: 0.75rem; font-family: 'Outfit', sans-serif; flex-wrap: wrap;">
+                        <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="setDateRange(30)">Last Month</span>
+                        <span style="color: var(--text-muted);">|</span>
+                        <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="setDateRange(90)">Last 3 Months</span>
+                        <span style="color: var(--text-muted);">|</span>
+                        <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="setDateRange(365)">Last Year</span>
+                        <span style="color: var(--text-muted);">|</span>
+                        <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="setDateRange(730)">Last 2 Years</span>
+                        <span style="color: var(--text-muted);">|</span>
+                        <span style="color: var(--primary); cursor: pointer; text-decoration: underline; font-weight: 500;" onclick="setDateRange(null)">All Time</span>
+                    </div>
                 </div>
                 <div class="filter-group" style="flex: 2; min-width: 250px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
@@ -1823,6 +1838,28 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         alert("Error connecting to server to delete session.");
                     });
             }
+        }
+
+        function setDateRange(days) {
+            const end = new Date();
+            let start = null;
+            if (days !== null) {
+                start = new Date();
+                start.setDate(end.getDate() - days);
+            }
+            
+            const formatDate = (date) => {
+                if (!date) return '';
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
+            
+            document.getElementById('filter-start-date').value = formatDate(start);
+            document.getElementById('filter-end-date').value = formatDate(end);
+            
+            loadAnalyticsData();
         }
 
         window.addEventListener('DOMContentLoaded', () => {
