@@ -63,6 +63,48 @@ def combine_and_save_ledgers(source_dir, output_dir):
     try:
         all_ledgers.to_csv(combined_file_path, index=False)
         print(f"\nCombined ledger saved to {combined_file_path}")
+        
+        # Integrate DB insertion
+        try:
+            from db_client import DBClient
+            db = DBClient()
+            today_db_date = datetime.datetime.now().strftime('%Y-%m-%d')
+            filename = f'downloaded_ledgers_{today_str}.csv'
+            
+            db.insert_session(today_db_date, filename)
+            
+            for _, row in all_ledgers.iterrows():
+                nickname = str(row.get("player_nickname", ""))
+                player_id = str(row.get("player_id", ""))
+                start_at = str(row.get("session_start_at", ""))
+                
+                end_at_val = row.get("session_end_at")
+                end_at = str(end_at_val) if pd.notna(end_at_val) else None
+                
+                buy_in = int(row.get("buy_in", 0))
+                
+                buy_out_val = row.get("buy_out")
+                buy_out = float(buy_out_val) if pd.notna(buy_out_val) else None
+                
+                stack_val = row.get("stack")
+                stack = int(stack_val) if pd.notna(stack_val) else None
+                
+                net = int(row.get("net", 0))
+                
+                db.insert_ledger_record(
+                    nickname=nickname,
+                    player_id=player_id,
+                    start_at=start_at,
+                    end_at=end_at,
+                    buy_in=buy_in,
+                    buy_out=buy_out,
+                    stack=stack,
+                    net=net,
+                    ledger_date=today_db_date
+                )
+            print("[Database] Successfully logged today's ledger records to the database.")
+        except Exception as db_err:
+            print(f"[Database] Error importing ledger data to database: {db_err}")
     except Exception as e:
         print(f"\nError saving combined ledger: {e}.")
         return False

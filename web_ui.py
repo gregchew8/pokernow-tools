@@ -465,6 +465,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(self.get_html_dashboard().encode("utf-8"))
+        elif self.path == "/analytics":
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(self.get_html_analytics().encode("utf-8"))
         elif self.path == "/api/status":
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -616,6 +621,39 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[WebUI] Error reading schedule.json: {e}")
             self.wfile.write(json.dumps(schedule_data).encode("utf-8"))
+        elif self.path.startswith("/api/player-stats"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            
+            parsed_url = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(parsed_url.query)
+            
+            start_date = query.get("start_date", [None])[0]
+            end_date = query.get("end_date", [None])[0]
+            
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                stats = db.get_player_stats(start_date, end_date)
+                history = db.get_player_history(start_date, end_date)
+                
+                # Fetch all unique session dates
+                sessions_cursor = db.execute("SELECT ledger_date FROM sessions ORDER BY ledger_date ASC")
+                sessions = [r[0] if db.is_postgres else r["ledger_date"] for r in sessions_cursor.fetchall()]
+                
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "stats": stats,
+                    "history": history,
+                    "sessions": sessions
+                }).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(e)
+                }).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -864,6 +902,678 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
+
+    def get_html_analytics(self):
+        return r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Player Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(22, 28, 45, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-color: #e2e8f0;
+            --text-muted: #94a3b8;
+            --primary: #4f46e5;
+            --primary-hover: #6366f1;
+            --success: #10b981;
+            --danger: #ef4444;
+            --glow: 0 0 20px rgba(79, 70, 229, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(31, 41, 55, 0.3) 0, transparent 50%),
+                radial-gradient(at 50% 0%, rgba(79, 70, 229, 0.05) 0, transparent 50%);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        header {
+            text-align: center;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .btn-action {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Filters and grid styles */
+        .analytics-filters-card {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            align-items: flex-end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex: 1;
+            min-width: 180px;
+        }
+        .filter-group label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .filter-input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #fff;
+            padding: 0.6rem 0.8rem;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .filter-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(79, 70, 229, 0.25);
+        }
+        .stats-summary-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.25rem;
+            width: 100%;
+        }
+        .summary-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            transition: all 0.2s;
+        }
+        .summary-card:hover {
+            border-color: rgba(79, 70, 229, 0.2);
+            transform: translateY(-2px);
+        }
+        .summary-card-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .summary-card-value {
+            font-size: 1.6rem;
+            font-weight: 800;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .summary-card-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .analytics-main-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            width: 100%;
+        }
+        @media (min-width: 1024px) {
+            .analytics-main-grid {
+                grid-template-columns: 2fr 1fr;
+            }
+        }
+        .stats-table-container {
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.4);
+            margin-top: 1rem;
+        }
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+        .stats-table th {
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .stats-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .stats-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .badge-positive {
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .badge-negative {
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .player-checkbox-list {
+            max-height: 140px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.5rem;
+            background: rgba(15, 23, 42, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .player-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            padding: 0.25rem;
+            cursor: pointer;
+            user-select: none;
+            border-radius: 4px;
+        }
+        .player-checkbox-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .player-checkbox-item input {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Poker Player Analytics</h1>
+            <p class="subtitle">Wins/Losses & Win Rate Performance Dashboard</p>
+        </header>
+
+        <!-- Filters -->
+        <div class="card full-width">
+            <h2>Filters & Selection</h2>
+            <div class="analytics-filters-card">
+                <div class="filter-group">
+                    <label for="filter-start-date">Start Date</label>
+                    <input type="date" id="filter-start-date" class="filter-input" onchange="loadAnalyticsData()">
+                </div>
+                <div class="filter-group">
+                    <label for="filter-end-date">End Date</label>
+                    <input type="date" id="filter-end-date" class="filter-input" onchange="loadAnalyticsData()">
+                </div>
+                <div class="filter-group" style="flex: 2; min-width: 250px;">
+                    <label>Select Players to Compare</label>
+                    <div id="analytics-player-list" class="player-checkbox-list">
+                        <div style="padding: 10px; color: var(--text-muted); font-size: 0.85rem;">Loading players...</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn-action btn-primary" onclick="loadAnalyticsData()" style="margin: 0;">Apply Filters</button>
+                    <button class="btn-action btn-secondary" onclick="resetFilters()" style="margin: 0;">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="stats-summary-row">
+            <div class="summary-card">
+                <div class="summary-card-title">Top Performer 🏆</div>
+                <div id="summary-top-player" class="summary-card-value" style="color: var(--success);">--</div>
+                <div id="summary-top-net" class="summary-card-desc">Net: $0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-title">Lowest Performer 📉</div>
+                <div id="summary-bottom-player" class="summary-card-value" style="color: var(--danger);">--</div>
+                <div id="summary-bottom-net" class="summary-card-desc">Net: $0</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-title">Total Games Tracked</div>
+                <div id="summary-total-sessions" class="summary-card-value">--</div>
+                <div id="summary-total-players" class="summary-card-desc">0 unique players</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-title">Total Action</div>
+                <div id="summary-total-action" class="summary-card-value">--</div>
+                <div class="summary-card-desc">Sum of buy-ins</div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="analytics-main-grid">
+            <div class="card">
+                <h2>Cumulative Net Earnings Trajectory</h2>
+                <div style="position: relative; height: 350px; width: 100%; margin-top: 1rem;">
+                    <canvas id="cumulativeNetChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Win Rate Ranking</h2>
+                <div style="position: relative; height: 350px; width: 100%; margin-top: 1rem;">
+                    <canvas id="winRateChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leaderboard Table -->
+        <div class="card full-width">
+            <h2>Player Leaderboard</h2>
+            <div class="stats-table-container">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Nickname</th>
+                            <th>Sessions</th>
+                            <th>Win Rate</th>
+                            <th>Avg Buy-in</th>
+                            <th>Total Buy-in</th>
+                            <th>Net Earnings</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-table-body">
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                                Loading data...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cumulativeNetChartInstance = null;
+        let winRateChartInstance = null;
+        let originalStatsData = null;
+
+        function resetFilters() {
+            document.getElementById('filter-start-date').value = '';
+            document.getElementById('filter-end-date').value = '';
+            const checkboxes = document.querySelectorAll('#analytics-player-list input[type="checkbox"]');
+            checkboxes.forEach((cb, idx) => {
+                cb.checked = (idx < 5);
+            });
+            loadAnalyticsData();
+        }
+
+        function loadAnalyticsData() {
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
+            
+            let url = '/api/player-stats';
+            const params = [];
+            if (startDate) params.push(`start_date=${startDate}`);
+            if (endDate) params.push(`end_date=${endDate}`);
+            if (params.length > 0) {
+                url += '?' + params.join('&');
+            }
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.success) {
+                        console.error("Failed to load player stats:", data.error);
+                        return;
+                    }
+                    originalStatsData = data;
+                    populatePlayerCheckboxes(data.stats);
+                    updateAnalyticsUI(data);
+                })
+                .catch(err => console.error("Error loading analytics:", err));
+        }
+
+        function populatePlayerCheckboxes(stats) {
+            const listContainer = document.getElementById('analytics-player-list');
+            const existingChecked = {};
+            const checkboxes = listContainer.querySelectorAll('input[type="checkbox"]');
+            if (checkboxes.length > 0) {
+                checkboxes.forEach(cb => {
+                    existingChecked[cb.value] = cb.checked;
+                });
+            } else {
+                stats.slice(0, 5).forEach(s => {
+                    existingChecked[s.player_id] = true;
+                });
+            }
+            
+            listContainer.innerHTML = '';
+            if (stats.length === 0) {
+                listContainer.innerHTML = '<div style="padding: 10px; color: var(--text-muted); font-size: 0.85rem;">No players found.</div>';
+                return;
+            }
+            
+            stats.forEach(s => {
+                const label = document.createElement('label');
+                label.className = 'player-checkbox-item';
+                const isChecked = existingChecked[s.player_id] ? 'checked' : '';
+                label.innerHTML = `
+                    <input type="checkbox" value="${s.player_id}" data-name="${s.player_nickname}" ${isChecked} onchange="updateChartsOnly()">
+                    <span>${s.player_nickname} (${s.total_sessions}g, ${s.total_net >= 0 ? '+' : ''}${s.total_net.toLocaleString()})</span>
+                `;
+                listContainer.appendChild(label);
+            });
+        }
+
+        function updateChartsOnly() {
+            if (originalStatsData) {
+                updateAnalyticsUI(originalStatsData);
+            }
+        }
+
+        const playerColors = [
+            '#6366f1', '#10b981', '#06b6d4', '#f59e0b', '#ec4899', 
+            '#8b5cf6', '#ef4444', '#14b8a6', '#3b82f6', '#a855f7', 
+            '#22c55e', '#eab308'
+        ];
+        
+        function getColorForIndex(idx) {
+            return playerColors[idx % playerColors.length];
+        }
+
+        function updateAnalyticsUI(data) {
+            const stats = data.stats;
+            const history = data.history;
+            const sessions = data.sessions;
+            
+            if (stats && stats.length > 0) {
+                const top = stats[0];
+                document.getElementById('summary-top-player').textContent = top.player_nickname;
+                document.getElementById('summary-top-net').innerHTML = `Net: <span style="color:var(--success); font-weight:600;">+$${top.total_net.toLocaleString()}</span>`;
+                
+                const bottom = stats[stats.length - 1];
+                document.getElementById('summary-bottom-player').textContent = bottom.player_nickname;
+                document.getElementById('summary-bottom-net').innerHTML = `Net: <span style="color:var(--danger); font-weight:600;">-$${Math.abs(bottom.total_net).toLocaleString()}</span>`;
+            } else {
+                document.getElementById('summary-top-player').textContent = '--';
+                document.getElementById('summary-top-net').textContent = 'Net: $0';
+                document.getElementById('summary-bottom-player').textContent = '--';
+                document.getElementById('summary-bottom-net').textContent = 'Net: $0';
+            }
+            
+            document.getElementById('summary-total-sessions').textContent = sessions.length;
+            document.getElementById('summary-total-players').textContent = `${stats.length} unique players`;
+            
+            const totalAction = stats.reduce((sum, item) => sum + item.total_buy_in, 0);
+            document.getElementById('summary-total-action').textContent = `$${totalAction.toLocaleString()}`;
+
+            const tbody = document.getElementById('leaderboard-table-body');
+            tbody.innerHTML = '';
+            if (stats.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No records found.</td></tr>';
+            } else {
+                stats.forEach(s => {
+                    const tr = document.createElement('tr');
+                    const netClass = s.total_net >= 0 ? 'badge-positive' : 'badge-negative';
+                    const winRate = ((s.win_count / s.total_sessions) * 100).toFixed(0);
+                    
+                    tr.innerHTML = `
+                        <td style="font-weight: 600;">${s.player_nickname}</td>
+                        <td>${s.total_sessions}</td>
+                        <td>${winRate}%</td>
+                        <td>$${Math.round(s.avg_buy_in).toLocaleString()}</td>
+                        <td>$${s.total_buy_in.toLocaleString()}</td>
+                        <td><span class="${netClass}">${s.total_net >= 0 ? '+' : ''}$${s.total_net.toLocaleString()}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            const checkedBoxes = Array.from(document.querySelectorAll('#analytics-player-list input[type="checkbox"]:checked'));
+            const selectedPlayerIds = checkedBoxes.map(cb => cb.value);
+            const selectedPlayerNames = checkedBoxes.map(cb => cb.getAttribute('data-name'));
+            
+            const datasets = [];
+            selectedPlayerIds.forEach((pid, idx) => {
+                const name = selectedPlayerNames[idx];
+                const color = getColorForIndex(idx);
+                const dataPoints = [0];
+                let runningSum = 0;
+                
+                sessions.forEach(date => {
+                    const sessionRecord = history.find(h => h.player_id === pid && h.ledger_date === date);
+                    if (sessionRecord) {
+                        runningSum += sessionRecord.net;
+                    }
+                    dataPoints.push(runningSum);
+                });
+                
+                datasets.push({
+                    label: name,
+                    data: dataPoints,
+                    borderColor: color,
+                    backgroundColor: color + '15',
+                    borderWidth: 2.5,
+                    tension: 0.15,
+                    pointRadius: sessions.length > 50 ? 0 : 3.5,
+                    pointHoverRadius: 6,
+                    fill: false
+                });
+            });
+            
+            const chartLabels = ['Start', ...sessions];
+            
+            if (cumulativeNetChartInstance) {
+                cumulativeNetChartInstance.destroy();
+            }
+            
+            const ctxLine = document.getElementById('cumulativeNetChart').getContext('2d');
+            cumulativeNetChartInstance = new Chart(ctxLine, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.03)' },
+                            ticks: { color: '#94a3b8', maxTicksLimit: 12, font: { family: 'Outfit' } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.03)' },
+                            ticks: { 
+                                color: '#94a3b8',
+                                font: { family: 'Outfit' },
+                                callback: function(val) {
+                                    return (val >= 0 ? '+$' : '-$') + Math.abs(val).toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e2e8f0', boxWidth: 12, font: { family: 'Outfit' } },
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    const val = context.parsed.y;
+                                    label += (val >= 0 ? '+$' : '-$') + Math.abs(val).toLocaleString();
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const barLabels = [];
+            const winRates = [];
+            const barColors = [];
+            const playersToBar = stats.filter(s => selectedPlayerIds.length === 0 || selectedPlayerIds.includes(s.player_id));
+            
+            playersToBar.forEach((p, idx) => {
+                barLabels.push(p.player_nickname);
+                const wr = ((p.win_count / p.total_sessions) * 100);
+                winRates.push(parseFloat(wr.toFixed(1)));
+                barColors.push(getColorForIndex(idx));
+            });
+
+            if (winRateChartInstance) {
+                winRateChartInstance.destroy();
+            }
+
+            const ctxBar = document.getElementById('winRateChart').getContext('2d');
+            winRateChartInstance = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: barLabels,
+                    datasets: [{
+                        label: 'Win Rate (%)',
+                        data: winRates,
+                        backgroundColor: barColors.map(c => c + '30'),
+                        borderColor: barColors,
+                        borderWidth: 1.5,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.03)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit' } },
+                            min: 0,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.parsed.y + '% Win Rate';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadAnalyticsData();
+        });
+    </script>
+</body>
+</html>
+"""
 
     def get_html_dashboard(self):
         return r"""<!DOCTYPE html>
@@ -1414,16 +2124,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
             🛑 Automatic schedule run has been manually skipped for tonight!
         </div>
 
-        <div id="draft-banner" class="banner banner-info" style="display: none; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1rem;">
-            <div style="display: flex; align-items: center; width: 100%;">
-                <span>📧 Pending email draft: <strong id="draft-subject" style="color: #fff;"></strong></span>
-                <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
-                    <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: rgba(255,255,255,0.08);" onclick="toggleDraftPreview()">Preview Email</button>
-                    <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0;" onclick="discardDraft()">Discard</button>
-                    <button class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: var(--success);" onclick="approveDraft()">Send Email Now</button>
-                </div>
-            </div>
-            <div id="draft-preview-box" style="display: none; margin-top: 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 1rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #cbd5e1; max-height: 300px; overflow-y: auto; white-space: pre-wrap; text-align: left; width: 100%; box-sizing: border-box;">
+        <div id="draft-banner" class="banner banner-info" style="display: none;">
+            <span>📧 Pending email draft: <strong id="draft-subject" style="color: #fff;"></strong></span>
+            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0;" onclick="discardDraft()">Discard</button>
+                <button class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: var(--success);" onclick="approveDraft()">Send Email Now</button>
             </div>
         </div>
 
@@ -2002,10 +2707,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     if (data.pending_email && data.pending_email.has_draft) {
                         draftBanner.style.display = 'flex';
                         document.getElementById('draft-subject').textContent = data.pending_email.subject;
-                        document.getElementById('draft-preview-box').textContent = data.pending_email.body || '';
                     } else {
                         draftBanner.style.display = 'none';
-                        document.getElementById('draft-preview-box').style.display = 'none';
                     }
                 })
                 .catch(err => console.error("Error updating dashboard:", err));
@@ -2457,15 +3160,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     alert("Error discarding email: " + err);
                     updateDashboard();
                 });
-        }
-
-        function toggleDraftPreview() {
-            const previewBox = document.getElementById('draft-preview-box');
-            if (previewBox.style.display === 'none') {
-                previewBox.style.display = 'block';
-            } else {
-                previewBox.style.display = 'none';
-            }
         }
 
         function killTask(taskName) {

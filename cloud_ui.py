@@ -646,7 +646,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"sessions": sessions_list}).encode("utf-8"))
             return
             
-        elif path.startswith("/api/"):
+        elif path == "/analytics" or path.startswith("/api/"):
             self.proxy_to_agent("GET")
         else:
             self.send_error(404, "Not Found")
