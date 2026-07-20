@@ -669,7 +669,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 history = db.get_player_history(start_date, end_date)
                 
                 sessions_cursor = db.execute("SELECT ledger_date, filename FROM sessions ORDER BY ledger_date DESC")
-                sessions = [{"date": r[0], "filename": r[1]} if db.is_postgres else {"date": r["ledger_date"], "filename": r["filename"]} for r in sessions_cursor.fetchall()]
+                sessions = [{"date": str(r[0]), "filename": r[1]} if db.is_postgres else {"date": str(r["ledger_date"]), "filename": r["filename"]} for r in sessions_cursor.fetchall()]
                 
                 self.wfile.write(json.dumps({
                     "success": True,
