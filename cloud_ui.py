@@ -668,8 +668,8 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 stats = db.get_player_stats(start_date, end_date)
                 history = db.get_player_history(start_date, end_date)
                 
-                sessions_cursor = db.execute("SELECT ledger_date FROM sessions ORDER BY ledger_date ASC")
-                sessions = [r[0] if db.is_postgres else r["ledger_date"] for r in sessions_cursor.fetchall()]
+                sessions_cursor = db.execute("SELECT ledger_date, filename FROM sessions ORDER BY ledger_date DESC")
+                sessions = [{"date": r[0], "filename": r[1]} if db.is_postgres else {"date": r["ledger_date"], "filename": r["filename"]} for r in sessions_cursor.fetchall()]
                 
                 self.wfile.write(json.dumps({
                     "success": True,
@@ -682,6 +682,23 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                     "success": False,
                     "error": str(e)
                 }).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/delete-session"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                query = urllib.parse.parse_qs(parsed_path.query)
+                date_str = query.get("date", [None])[0]
+                if not date_str:
+                    raise Exception("Missing date parameter")
+                db.delete_session(date_str)
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
             return
             
         elif path.startswith("/api/"):

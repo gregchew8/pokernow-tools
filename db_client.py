@@ -140,11 +140,21 @@ class DBClient:
             self.conn.rollback()
             return False
 
+    def delete_session(self, ledger_date):
+        try:
+            self.execute("DELETE FROM player_ledger_records WHERE ledger_date = ?", (ledger_date,))
+            self.execute("DELETE FROM sessions WHERE ledger_date = ?", (ledger_date,))
+            self.commit()
+            return True
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+
     def insert_ledger_record(self, nickname, player_id, start_at, end_at, buy_in, buy_out, stack, net, ledger_date):
         # Check if record already exists to avoid duplicate runs
         res = self.execute(
-            "SELECT id FROM player_ledger_records WHERE player_id = ? AND ledger_date = ?", 
-            (player_id, ledger_date)
+            "SELECT id FROM player_ledger_records WHERE player_id = ? AND ledger_date = ? AND session_start_at = ?", 
+            (player_id, ledger_date, start_at)
         ).fetchone()
         
         if res:

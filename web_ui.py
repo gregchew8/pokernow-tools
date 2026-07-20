@@ -640,8 +640,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 history = db.get_player_history(start_date, end_date)
                 
                 # Fetch all unique session dates
-                sessions_cursor = db.execute("SELECT ledger_date FROM sessions ORDER BY ledger_date ASC")
-                sessions = [r[0] if db.is_postgres else r["ledger_date"] for r in sessions_cursor.fetchall()]
+                sessions_cursor = db.execute("SELECT ledger_date, filename FROM sessions ORDER BY ledger_date DESC")
+                sessions = [{"date": r[0], "filename": r[1]} if db.is_postgres else {"date": r["ledger_date"], "filename": r["filename"]} for r in sessions_cursor.fetchall()]
                 
                 self.wfile.write(json.dumps({
                     "success": True,
@@ -649,6 +649,28 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "history": history,
                     "sessions": sessions
                 }).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(e)
+                }).encode("utf-8"))
+        elif self.path.startswith("/api/delete-session"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            
+            parsed_url = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(parsed_url.query)
+            date_str = query.get("date", [None])[0]
+            
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                if not date_str:
+                    raise Exception("Missing date parameter")
+                db.delete_session(date_str)
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
             except Exception as e:
                 self.wfile.write(json.dumps({
                     "success": False,
@@ -1335,6 +1357,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </table>
             </div>
         </div>
+        
+        <!-- Database & Session History -->
+        <div class="card full-width">
+            <h2>Database & Session History</h2>
+            <div style="margin-top: 1rem; overflow-x: auto;">
+                <table class="stats-table" style="font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left; padding: 10px;">Session Date</th>
+                            <th style="text-align: left; padding: 10px;">Filename Reference</th>
+                            <th style="text-align: right; padding: 10px; width: 120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-table-body">
+                        <tr>
+                            <td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                                Loading sessions...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1567,6 +1612,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             const checkedBoxes = Array.from(document.querySelectorAll('#analytics-player-list input[type="checkbox"]:checked'));
             const selectedPlayerIds = checkedBoxes.map(cb => cb.value);
             const selectedPlayerNames = checkedBoxes.map(cb => cb.getAttribute('data-name'));
+            const sessionDates = sessions.map(s => s.date).reverse(); // Order chronological for chart
             
             const datasets = [];
             selectedPlayerIds.forEach((pid, idx) => {
@@ -1575,7 +1621,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 const dataPoints = [0];
                 let runningSum = 0;
                 
-                sessions.forEach(date => {
+                sessionDates.forEach(date => {
                     const sessionRecord = history.find(h => h.player_id === pid && h.ledger_date === date);
                     if (sessionRecord) {
                         runningSum += sessionRecord.net;
@@ -1590,13 +1636,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     backgroundColor: color + '15',
                     borderWidth: 2.5,
                     tension: 0.15,
-                    pointRadius: sessions.length > 50 ? 0 : 3.5,
+                    pointRadius: sessionDates.length > 50 ? 0 : 3.5,
                     pointHoverRadius: 6,
                     fill: false
                 });
             });
             
-            const chartLabels = ['Start', ...sessions];
+            const chartLabels = ['Start', ...sessionDates];
             
             if (cumulativeNetChartInstance) {
                 cumulativeNetChartInstance.destroy();
@@ -1705,6 +1751,78 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     }
                 }
             });
+
+            // Render database sessions list
+            const sessionsBody = document.getElementById('sessions-table-body');
+            sessionsBody.innerHTML = '';
+            if (data.sessions && data.sessions.length > 0) {
+                data.sessions.forEach(sess => {
+                    const tr = document.createElement('tr');
+                    
+                    const dateTd = document.createElement('td');
+                    dateTd.style.padding = '12px 10px';
+                    dateTd.style.fontWeight = '600';
+                    dateTd.textContent = sess.date;
+                    
+                    const fileTd = document.createElement('td');
+                    fileTd.style.padding = '12px 10px';
+                    fileTd.style.fontFamily = 'JetBrains Mono, monospace';
+                    fileTd.style.fontSize = '0.8rem';
+                    fileTd.style.color = 'var(--text-muted)';
+                    fileTd.textContent = sess.filename || '--';
+                    
+                    const actionTd = document.createElement('td');
+                    actionTd.style.padding = '12px 10px';
+                    actionTd.style.textAlign = 'right';
+                    
+                    const delBtn = document.createElement('button');
+                    delBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+                    delBtn.style.color = 'var(--danger)';
+                    delBtn.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+                    delBtn.style.padding = '5px 10px';
+                    delBtn.style.fontSize = '0.75rem';
+                    delBtn.style.borderRadius = '6px';
+                    delBtn.style.cursor = 'pointer';
+                    delBtn.style.fontWeight = '600';
+                    delBtn.style.margin = '0';
+                    delBtn.style.transition = 'all 0.2s';
+                    delBtn.textContent = 'Delete 🗑️';
+                    delBtn.onmouseover = () => {
+                        delBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                    };
+                    delBtn.onmouseout = () => {
+                        delBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+                    };
+                    delBtn.onclick = () => deleteSession(sess.date);
+                    
+                    actionTd.appendChild(delBtn);
+                    tr.appendChild(dateTd);
+                    tr.appendChild(fileTd);
+                    tr.appendChild(actionTd);
+                    sessionsBody.appendChild(tr);
+                });
+            } else {
+                sessionsBody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">No sessions in database.</td></tr>`;
+            }
+        }
+
+        function deleteSession(date) {
+            if (confirm(`Are you sure you want to permanently delete the session on ${date} and all associated player statistics? This cannot be undone.`)) {
+                fetch(`/api/delete-session?date=${date}`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success) {
+                            alert(`Session ${date} deleted successfully.`);
+                            loadAnalyticsData();
+                        } else {
+                            alert(`Failed to delete session: ${res.error}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        alert("Error connecting to server to delete session.");
+                    });
+            }
         }
 
         window.addEventListener('DOMContentLoaded', () => {
