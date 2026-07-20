@@ -6,6 +6,9 @@ import argparse
 import subprocess
 import datetime
 
+SKIP_TURNSTILE = False
+AUTO_DEALER = False
+
 def run_applescript(script):
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if res.returncode != 0:
@@ -133,10 +136,7 @@ def run(tables_to_create):
                 inject_js(js)
                 time.sleep(1)
             
-SKIP_TURNSTILE = False
-AUTO_DEALER = False
 
-# ... existing code ...
         if not detected_url:
             if SKIP_TURNSTILE:
                 print("[Warning] Turnstile was skipped; proceeding without detecting game URL.")
