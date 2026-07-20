@@ -400,6 +400,7 @@ if __name__ == "__main__":
     parser.add_argument("--bb", type=str, default="0.50")
     parser.add_argument("--skip-turnstile", action="store_true", help="Skip Turnstile waiting (use when already logged in).")
     parser.add_argument("--auto-dealer", action="store_true", help="Automatically set dealer seat if missing.")
+    parser.add_argument("--adhoc", action="store_true", help="Is ad-hoc run")
     
     # Parse command-line arguments (including new flags)
     parsed = parser.parse_args()
