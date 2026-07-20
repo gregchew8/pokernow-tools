@@ -1871,7 +1871,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
 """
 
     def get_html_dashboard(self):
-        return r"""<!DOCTYPE html>
+        import os
+        import hashlib
+        admin_pin = os.getenv("ADMIN_PIN", "").strip()
+        pin_hash = ""
+        if admin_pin:
+            pin_hash = hashlib.sha256(admin_pin.encode("utf-8")).hexdigest()
+            
+        html = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2405,6 +2412,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
             border: 1px solid rgba(79, 70, 229, 0.3);
             box-shadow: 0 0 15px rgba(79, 70, 229, 0.08);
         }
+        
+        .admin-locked .admin-only {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -2582,45 +2593,59 @@ class WebUIHandler(BaseHTTPRequestHandler):
             </div>
 
             <!-- Logs Section -->
-            <div class="card full-width">
+            <div id="admin-logs-card" class="card full-width admin-only" style="position: relative;">
                 <h2>System Logs & Outputs</h2>
                 
-                <div id="announcer-stdout-container" class="console-container">
-                    <div class="console-header">
-                        <span>Announcer Logs (Stdout)</span>
-                        <span id="announcer-stdout-time" class="log-meta"></span>
-                        <button class="copy-btn" onclick="copyConsole('announcer-stdout', this)">Copy</button>
+                <!-- PIN Overlay -->
+                <div id="logs-pin-overlay" style="display: none; padding: 2.5rem 1rem; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+                    <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-color);">Admin logs are locked</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Please enter the 4-digit PIN to view activity logs.</p>
+                    <div style="display: flex; justify-content: center; gap: 0.5rem; align-items: center; max-width: 320px; margin: 0 auto;">
+                        <input type="password" id="admin-pin-input" maxlength="4" placeholder="••••" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; padding: 0.6rem; font-size: 1.1rem; letter-spacing: 0.5em; text-align: center; width: 120px; font-family: monospace;" onkeyup="checkPinInput(event)">
+                        <button class="btn-action btn-primary" onclick="unlockAdminLogs()" style="margin: 0; padding: 0.6rem 1.2rem;">Unlock</button>
                     </div>
-                    <pre id="announcer-stdout">Loading logs...</pre>
+                    <div id="pin-error-msg" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.75rem; display: none;">Invalid PIN!</div>
                 </div>
-                
-                <div id="announcer-stderr-container" class="console-container error-log">
-                    <div class="console-header">
-                        <span>Announcer Errors (Stderr) <span id="announcer-stderr-badge" class="badge"></span></span>
-                        <span id="announcer-stderr-time" class="log-meta"></span>
-                        <button class="copy-btn" onclick="copyConsole('announcer-stderr', this)">Copy</button>
+
+                <div id="admin-logs-content" style="display: none;">
+                    <div id="announcer-stdout-container" class="console-container">
+                        <div class="console-header">
+                            <span>Announcer Logs (Stdout)</span>
+                            <span id="announcer-stdout-time" class="log-meta"></span>
+                            <button class="copy-btn" onclick="copyConsole('announcer-stdout', this)">Copy</button>
+                        </div>
+                        <pre id="announcer-stdout">Loading logs...</pre>
                     </div>
-                    <pre id="announcer-stderr">Loading logs...</pre>
-                </div>
-                
-                <hr style="margin: 2rem 0; border: none; border-top: 1px solid var(--border-color);">
-                
-                <div id="settlement-stdout-container" class="console-container">
-                    <div class="console-header">
-                        <span>Settlement Logs (Stdout)</span>
-                        <span id="settlement-stdout-time" class="log-meta"></span>
-                        <button class="copy-btn" onclick="copyConsole('settlement-stdout', this)">Copy</button>
+                    
+                    <div id="announcer-stderr-container" class="console-container error-log">
+                        <div class="console-header">
+                            <span>Announcer Errors (Stderr) <span id="announcer-stderr-badge" class="badge"></span></span>
+                            <span id="announcer-stderr-time" class="log-meta"></span>
+                            <button class="copy-btn" onclick="copyConsole('announcer-stderr', this)">Copy</button>
+                        </div>
+                        <pre id="announcer-stderr">Loading logs...</pre>
                     </div>
-                    <pre id="settlement-stdout">Loading logs...</pre>
-                </div>
-                
-                <div id="settlement-stderr-container" class="console-container error-log">
-                    <div class="console-header">
-                        <span>Settlement Errors (Stderr) <span id="settlement-stderr-badge" class="badge"></span></span>
-                        <span id="settlement-stderr-time" class="log-meta"></span>
-                        <button class="copy-btn" onclick="copyConsole('settlement-stderr', this)">Copy</button>
+                    
+                    <hr style="margin: 2rem 0; border: none; border-top: 1px solid var(--border-color);">
+                    
+                    <div id="settlement-stdout-container" class="console-container">
+                        <div class="console-header">
+                            <span>Settlement Logs (Stdout)</span>
+                            <span id="settlement-stdout-time" class="log-meta"></span>
+                            <button class="copy-btn" onclick="copyConsole('settlement-stdout', this)">Copy</button>
+                        </div>
+                        <pre id="settlement-stdout">Loading logs...</pre>
                     </div>
-                    <pre id="settlement-stderr">Loading logs...</pre>
+                    
+                    <div id="settlement-stderr-container" class="console-container error-log">
+                        <div class="console-header">
+                            <span>Settlement Errors (Stderr) <span id="settlement-stderr-badge" class="badge"></span></span>
+                            <span id="settlement-stderr-time" class="log-meta"></span>
+                            <button class="copy-btn" onclick="copyConsole('settlement-stderr', this)">Copy</button>
+                        </div>
+                        <pre id="settlement-stderr">Loading logs...</pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3542,7 +3567,61 @@ class WebUIHandler(BaseHTTPRequestHandler):
             }, 2500);
         }
 
+        const PIN_HASH = "{{ADMIN_PIN_HASH}}";
+        
+        function initAdminLock() {
+            if (PIN_HASH) {
+                if (sessionStorage.getItem('admin_unlocked') === 'true') {
+                    document.body.classList.remove('admin-locked');
+                    document.getElementById('logs-pin-overlay').style.display = 'none';
+                    document.getElementById('admin-logs-content').style.display = 'block';
+                } else {
+                    document.body.classList.add('admin-locked');
+                    document.getElementById('logs-pin-overlay').style.display = 'block';
+                    document.getElementById('admin-logs-content').style.display = 'none';
+                }
+            } else {
+                document.body.classList.remove('admin-locked');
+                document.getElementById('logs-pin-overlay').style.display = 'none';
+                document.getElementById('admin-logs-content').style.display = 'block';
+            }
+        }
+        
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+        
+        async function unlockAdminLogs() {
+            const inputVal = document.getElementById('admin-pin-input').value;
+            const errorMsg = document.getElementById('pin-error-msg');
+            
+            const hash = await sha256(inputVal);
+            if (hash === PIN_HASH) {
+                sessionStorage.setItem('admin_unlocked', 'true');
+                document.body.classList.remove('admin-locked');
+                document.getElementById('logs-pin-overlay').style.display = 'none';
+                document.getElementById('admin-logs-content').style.display = 'block';
+                errorMsg.style.display = 'none';
+                updateDashboard();
+            } else {
+                errorMsg.style.display = 'block';
+                document.getElementById('admin-pin-input').value = '';
+                document.getElementById('admin-pin-input').focus();
+            }
+        }
+        
+        function checkPinInput(event) {
+            if (event.key === 'Enter') {
+                unlockAdminLogs();
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
+            initAdminLock();
             const today = new Date();
             const yesterday = new Date(today);
             yesterday.setDate(today.getDate() - 1);
@@ -3565,6 +3644,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
 </body>
 </html>
 """
+        return html.replace("{{ADMIN_PIN_HASH}}", pin_hash)
 
 def main():
     server_address = ("", PORT)
