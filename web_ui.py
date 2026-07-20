@@ -1176,6 +1176,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
         .stats-table tr:hover td {
             background: rgba(255, 255, 255, 0.02);
         }
+        .stats-table tr {
+            transition: background-color 0.2s, border-left-color 0.2s;
+        }
+        .stats-table tr.table-row-selected td {
+            background: rgba(99, 102, 241, 0.1) !important;
+        }
+        .stats-table tr.table-row-selected {
+            border-left: 3px solid var(--primary);
+        }
         .badge-positive {
             color: var(--success);
             background: rgba(16, 185, 129, 0.1);
@@ -1355,6 +1364,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
             updateChartsOnly();
         }
 
+        function togglePlayerCheckbox(playerId) {
+            const cb = document.querySelector(`#analytics-player-list input[type="checkbox"][value="${playerId}"]`);
+            if (cb) {
+                cb.checked = !cb.checked;
+                updateChartsOnly();
+            }
+        }
+
         function resetFilters() {
             document.getElementById('filter-start-date').value = '';
             document.getElementById('filter-end-date').value = '';
@@ -1450,10 +1467,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 const top = sortedByNet[0];
                 const bottom = sortedByNet[sortedByNet.length - 1];
                 
-                document.getElementById('summary-top-player').textContent = top.player_nickname;
+                document.getElementById('summary-top-player').innerHTML = `<span style="cursor: pointer; text-decoration: underline;" onclick="togglePlayerCheckbox('${top.player_id}')">${top.player_nickname}</span>`;
                 document.getElementById('summary-top-net').innerHTML = `Net: <span style="color:var(--success); font-weight:600;">${top.total_net >= 0 ? '+' : ''}$${top.total_net.toLocaleString()}</span>`;
                 
-                document.getElementById('summary-bottom-player').textContent = bottom.player_nickname;
+                document.getElementById('summary-bottom-player').innerHTML = `<span style="cursor: pointer; text-decoration: underline;" onclick="togglePlayerCheckbox('${bottom.player_id}')">${bottom.player_nickname}</span>`;
                 document.getElementById('summary-bottom-net').innerHTML = `Net: <span style="color:var(--danger); font-weight:600;">${bottom.total_net >= 0 ? '+' : ''}$${bottom.total_net.toLocaleString()}</span>`;
             } else {
                 document.getElementById('summary-top-player').textContent = '--';
@@ -1500,28 +1517,37 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 }
             });
 
+            const checkedBoxes = Array.from(document.querySelectorAll('#analytics-player-list input[type="checkbox"]:checked'));
+            const selectedPlayerIds = checkedBoxes.map(cb => cb.value);
+
             const tbody = document.getElementById('leaderboard-table-body');
             tbody.innerHTML = '';
             if (stats.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">No records found.</td></tr>';
             } else {
                 stats.forEach(s => {
+                    const isChecked = selectedPlayerIds.includes(s.player_id);
                     const tr = document.createElement('tr');
+                    if (isChecked) {
+                        tr.className = 'table-row-selected';
+                    }
                     const netClass = s.total_net >= 0 ? 'badge-positive' : 'badge-negative';
                     const profitClass = s.profit_per_session >= 0 ? 'badge-positive' : 'badge-negative';
                     
-                    let nameHtml = `<div style="font-weight: 600;">${s.player_nickname}</div>`;
+                    let tooltipText = `<strong style="color:var(--primary); font-weight:600; display:block; margin-top:2px;">Click to toggle comparison</strong>`;
                     if (s.aliases && s.aliases.length > 0) {
                         const filtered = s.aliases.filter(a => a !== s.player_nickname);
                         if (filtered.length > 0) {
-                            nameHtml = `
-                                <div class="custom-tooltip" style="cursor: help;">
-                                    <div style="font-weight: 600; text-decoration: underline dotted var(--text-muted); display: inline-block;">${s.player_nickname}</div>
-                                    <span class="tooltip-text">Aliases: ${filtered.join(', ')}</span>
-                                </div>
-                            `;
+                            tooltipText = `Aliases: ${filtered.join(', ')}` + '<hr style="border-top:1px solid #475569; margin:6px 0;"/>' + tooltipText;
                         }
                     }
+                    
+                    const nameHtml = `
+                        <div class="custom-tooltip" style="cursor: pointer;" onclick="togglePlayerCheckbox('${s.player_id}')">
+                            <div style="font-weight: 600; text-decoration: underline dotted var(--text-muted); display: inline-block;">${s.player_nickname}</div>
+                            <span class="tooltip-text">${tooltipText}</span>
+                        </div>
+                    `;
                     
                     tr.innerHTML = `
                         <td style="padding: 12px 8px; vertical-align: middle;">
