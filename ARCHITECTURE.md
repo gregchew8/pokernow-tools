@@ -41,13 +41,22 @@ This document details the system design, process execution boundaries, and netwo
 |  |       Local Agent Daemon          |   |      Local Control Panel            |  |
 |  |     (local_agent.py - 8081)       |   |       (web_ui.py - 8080)            |  |
 |  +-----------------------------------+   +-------------------------------------+  |
-|         |                       |                                                 |
-|    (Sends OTP)          (Spawns LaunchAgents)                                     |
-|         v                       v                                                 |
-|  +--------------+       +------------------------------------------------------+  |
-|  |  Local SMTP  |       | com.pokernow.game_nights (Announcer at 5 PM)         |  |
-|  | (Gmail Relay)|       | com.pokernow.next_morning (Settler/Playwright at 8AM)|  |
-|  +--------------+       +------------------------------------------------------+  |
+|         |                   |                                                     |
+|    (Sends OTP)      (Saves schedule.json                                          |
+|         |           & reloads plists)                                             |
+|         v                   v                                                     |
+|  +--------------+   +----------------------------------------------------------+  |
+|  |  Local SMTP  |   |             macOS launchd (System Daemon)                |  |
+|  | (Gmail Relay)|   |   Reads calendar plists (game_nights / next_morning)     |  |
+|  +--------------+   +----------------------------------------------------------+  |
+|                                     |                                             |
+|                                     | (Fires at Scheduled Calendar Times)         |
+|                                     v                                             |
+|                     +--------------------------------------------+                |
+|                     |        Execution Automation Scripts        |                |
+|                     |  - Setup & Announce: announce_games.py     |                |
+|                     |  - Download & Settle: auto_settle.py       |                |
+|                     +--------------------------------------------+                |
 +-----------------------------------------------------------------------------------+
 ```
 
