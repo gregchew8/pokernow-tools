@@ -95,3 +95,67 @@ python3 setup_local_scheduler.py
 - **Email Notification Branding**: Automated emails are sent with the display name `LCR Admins` and include a built-in feedback footer directing questions, suggestions, or improvements to `lcr-poker-admins@googlegroups.com`.
 - **⚠️ Personal Data**: Do **NOT** publish `.env`, `calendar_credentials.json`, `payment_info.csv` or the `chrome-profile/` directory to public repositories. They are excluded by `.gitignore`.
 
+---
+
+## Remote Access & Hybrid Database Architecture
+
+The control panel and analytics system use a **decoupled cloud-to-local hybrid architecture** to allow secure remote administration of your Poker Now automation tools while bypassing network constraints:
+
+### Component Breakdown: What Runs Where
+
+```mermaid
+graph TD
+    User([Admin Browser]) <-->|HTTPS| CloudUI[Railway Cloud UI: cloud_ui.py]
+    CloudUI <-->|Secure Proxy API| LocalAgent[Mac Mini Agent: local_agent.py]
+    LocalAgent <-->|Direct Connection| Postgres[(Railway PostgreSQL Database)]
+    LocalAgent -->|Local SMTP| GmailSMTP[Gmail SMTP Server]
+    LocalAgent <-->|Local Files| LocalCP[Local Control Panel: web_ui.py]
+```
+
+#### 1. Railway Cloud UI (`cloud_ui.py`)
+- Runs on **Railway** (`https://poker.gchew.com`) inside a secure, zero-dependency Docker container.
+- Serves as the **secure gatekeeper** for the control panel (`/`) and player performance dashboard (`/analytics`).
+- Enforces an automated **30-minute session limit** with a floating visual HUD countdown timer in the bottom-right corner.
+- **Session Authentication (OTP)**: Validates user identity and coordinates with the Mac Mini to send email OTP codes.
+
+#### 2. Mac Mini Local Agent (`local_agent.py` - Port 8081)
+- Runs locally on your Mac Mini as a background macOS `launchd` service.
+- **SMTP Gateway**: Sends OTP and settlement emails via your local network (bypassing Railway's outbound SMTP block).
+- **Database Handler**: Connects to the Railway PostgreSQL database using credentials from `.env` to run analytics queries, perform statistics calculations, and map alias variants.
+- **Persistent Activity Logging**: Transmits and writes administrative activity logs persistently to `output/admin_activity.json` on the Mac Mini.
+
+#### 3. Local Control Panel UI (`web_ui.py` - Port 8080)
+- Runs on your local Mac Mini (accessible over Tailscale or your local network).
+- Serves the administrative control panel for manual triggers, log viewing, and configuration edits.
+- Houses the HTML templates and styling sheets for the analytics dashboard layout.
+
+#### 4. Railway PostgreSQL Database (`Postgres`)
+- Serves as the shared persistent relational store.
+- Stores historical game tables and player records dynamically populated during morning settlements or manual imports.
+
+---
+
+## Player Performance Analytics Dashboard (`/analytics`)
+
+The dedicated `/analytics` route offers an interactive, real-time visualization of players' cumulative performance over time:
+
+1. **Venmo ID Unique Correlation**:
+   - Player records are automatically correlated using handles from `payment_info.csv`.
+   - Different Poker Now nicknames/aliases (e.g. `Billy Berns 1`, `Billy Berns 3`, `Billy Berns 4`) collapse automatically into a single Venmo ID entity (e.g. `@Tony-Berns`).
+   - Handles are resolved using smart regex fallbacks that automatically strip trailing numbers/spaces from unmapped nickname variants to identify their parent handle.
+   - Any bad data or placeholders not mapped to a valid Venmo ID handle (starting with `@`) are filtered out automatically to maintain accurate metrics.
+2. **Instant Tooltips**:
+   - Hovering over a player name instantly reveals a custom tooltip listing all Poker Now nicknames aggregated under that Venmo ID.
+   - Hovering over the **Top Performer** and **Lowest Performer** cards instantly shows detailed explanations of their profit/loss formulas.
+3. **Interactive Chart Toggles & Table Highlighting**:
+   - Clicking a player's name in the leaderboard table, or clicking their name on the Performer Cards, automatically toggles their checkbox and line chart trajectory.
+   - Leaderboard rows are highlighted in indigo when selected, making it easy to cross-reference data.
+4. **Sortable Columns & Metrics**:
+   - Includes a **Profit / Session** column showing the average net return per game.
+   - Every column in the table is interactive: click the header to toggle sorting (Ascending `▲` / Descending `▼`).
+5. **Cumulative Net Trajectory Chart**:
+   - Plot trajectories for multiple players at once. Trajectories are plotted in dollars (database cent values scaled by 100).
+   - Selecting a losing player (e.g., `@zardaloo`) scales the chart's y-axis to correctly display negative and positive boundaries.
+
+
+
