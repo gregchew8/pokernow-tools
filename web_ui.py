@@ -1299,18 +1299,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
             <div class="stats-table-container">
                 <table class="stats-table">
                     <thead>
-                        <tr>
-                            <th>Nickname</th>
-                            <th>Sessions</th>
-                            <th>Win Rate</th>
-                            <th>Avg Buy-in</th>
-                            <th>Total Buy-in</th>
-                            <th>Net Earnings</th>
+                        <tr style="user-select: none;">
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('player_nickname')">Player Name <span id="sort-player_nickname"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('total_sessions')">Sessions <span id="sort-total_sessions"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('win_rate')">Win Rate <span id="sort-win_rate"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('avg_buy_in')">Avg Buy-in <span id="sort-avg_buy_in"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('total_buy_in')">Total Buy-in <span id="sort-total_buy_in"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('profit_per_session')">Profit / Session <span id="sort-profit_per_session"></span></th>
+                            <th style="cursor: pointer; position: relative;" onclick="changeSort('total_net')">Net Earnings <span id="sort-total_net"></span></th>
                         </tr>
                     </thead>
                     <tbody id="leaderboard-table-body">
                         <tr>
-                            <td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            <td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">
                                 Loading data...
                             </td>
                         </tr>
@@ -1324,6 +1325,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
         let cumulativeNetChartInstance = null;
         let winRateChartInstance = null;
         let originalStatsData = null;
+        let currentSortField = 'total_net';
+        let currentSortAsc = false;
+
+        function changeSort(field) {
+            if (currentSortField === field) {
+                currentSortAsc = !currentSortAsc;
+            } else {
+                currentSortField = field;
+                currentSortAsc = (field === 'player_nickname') ? true : false; // Name defaults to ASC, numbers to DESC
+            }
+            if (originalStatsData) {
+                updateAnalyticsUI(originalStatsData);
+            }
+        }
 
         function resetFilters() {
             document.getElementById('filter-start-date').value = '';
@@ -1438,15 +1453,47 @@ class WebUIHandler(BaseHTTPRequestHandler):
             const totalAction = stats.reduce((sum, item) => sum + item.total_buy_in, 0);
             document.getElementById('summary-total-action').textContent = `$${totalAction.toLocaleString()}`;
 
+            // Precompute win_rate and profit_per_session for sorting and displaying
+            stats.forEach(s => {
+                s.profit_per_session = s.total_sessions > 0 ? (s.total_net / s.total_sessions) : 0;
+                s.win_rate = s.total_sessions > 0 ? ((s.win_count / s.total_sessions) * 100) : 0;
+            });
+
+            // Sort stats array dynamically
+            stats.sort((a, b) => {
+                let valA = a[currentSortField];
+                let valB = b[currentSortField];
+                if (typeof valA === 'string') {
+                    return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return currentSortAsc ? (valA - valB) : (valB - valA);
+                }
+            });
+
+            // Update sort arrows/indicators in HTML headers
+            const sortFields = ['player_nickname', 'total_sessions', 'win_rate', 'avg_buy_in', 'total_buy_in', 'profit_per_session', 'total_net'];
+            sortFields.forEach(f => {
+                const span = document.getElementById(`sort-${f}`);
+                if (span) {
+                    if (f === currentSortField) {
+                        span.textContent = currentSortAsc ? ' ▲' : ' ▼';
+                        span.style.color = 'var(--primary)';
+                    } else {
+                        span.textContent = ' ↕';
+                        span.style.color = 'var(--text-muted)';
+                    }
+                }
+            });
+
             const tbody = document.getElementById('leaderboard-table-body');
             tbody.innerHTML = '';
             if (stats.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No records found.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">No records found.</td></tr>';
             } else {
                 stats.forEach(s => {
                     const tr = document.createElement('tr');
                     const netClass = s.total_net >= 0 ? 'badge-positive' : 'badge-negative';
-                    const winRate = ((s.win_count / s.total_sessions) * 100).toFixed(0);
+                    const profitClass = s.profit_per_session >= 0 ? 'badge-positive' : 'badge-negative';
                     
                     let nameHtml = `<div style="font-weight: 600;">${s.player_nickname}</div>`;
                     if (s.aliases && s.aliases.length > 0) {
@@ -1466,9 +1513,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                             ${nameHtml}
                         </td>
                         <td>${s.total_sessions}</td>
-                        <td>${winRate}%</td>
+                        <td>${s.win_rate.toFixed(0)}%</td>
                         <td>$${Math.round(s.avg_buy_in).toLocaleString()}</td>
                         <td>$${s.total_buy_in.toLocaleString()}</td>
+                        <td><span class="${profitClass}">${s.profit_per_session >= 0 ? '+' : ''}$${s.profit_per_session.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
                         <td><span class="${netClass}">${s.total_net >= 0 ? '+' : ''}$${s.total_net.toLocaleString()}</span></td>
                     `;
                     tbody.appendChild(tr);
