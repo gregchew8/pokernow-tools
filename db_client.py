@@ -164,19 +164,43 @@ class DBClient:
         import csv
         db_dir = os.path.dirname(os.path.abspath(__file__))
         filepath = os.path.join(db_dir, "payment_info.csv")
+        
+        csv_content = None
         if os.path.exists(filepath):
             try:
                 with open(filepath, newline='', encoding='utf-8') as file:
-                    reader = csv.reader(file)
-                    headers = [h.strip() for h in next(reader)]
-                    for row in reader:
-                        mapped_row = dict(zip(headers, row))
-                        nickname = mapped_row.get("PN Alias")
-                        venmo = mapped_row.get("Venmo / other")
-                        if nickname and venmo:
-                            mapping[nickname.strip().lower()] = venmo.strip()
+                    csv_content = file.read()
             except Exception as e:
                 print(f"[DBClient] Error reading payment_info.csv: {e}")
+                
+        if not csv_content and os.environ.get("GOOGLE_SHEET_CSV_URL"):
+            url = os.environ.get("GOOGLE_SHEET_CSV_URL")
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    csv_content = response.read().decode('utf-8')
+                    print("[DBClient] Mappings successfully loaded dynamically from Google Sheets.")
+            except Exception as e:
+                print(f"[DBClient] Failed to load mappings from Google Sheets: {e}")
+
+        if csv_content:
+            try:
+                lines = csv_content.splitlines()
+                reader = csv.reader(lines)
+                headers = [h.strip() for h in next(reader)]
+                for row in reader:
+                    mapped_row = dict(zip(headers, row))
+                    nickname = mapped_row.get("PN Alias")
+                    venmo = mapped_row.get("Venmo / other")
+                    if nickname and venmo:
+                        mapping[nickname.strip().lower()] = venmo.strip()
+            except Exception as e:
+                print(f"[DBClient] Error parsing CSV content: {e}")
+                
         return mapping
 
     def get_player_stats(self, start_date=None, end_date=None):

@@ -646,7 +646,45 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"sessions": sessions_list}).encode("utf-8"))
             return
             
-        elif path == "/analytics" or path.startswith("/api/"):
+        elif path == "/analytics":
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(WebUIHandler.get_html_analytics(None).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/player-stats"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                
+                query = urllib.parse.parse_qs(parsed_path.query)
+                start_date = query.get("start_date", [None])[0]
+                end_date = query.get("end_date", [None])[0]
+                
+                stats = db.get_player_stats(start_date, end_date)
+                history = db.get_player_history(start_date, end_date)
+                
+                sessions_cursor = db.execute("SELECT ledger_date FROM sessions ORDER BY ledger_date ASC")
+                sessions = [r[0] if db.is_postgres else r["ledger_date"] for r in sessions_cursor.fetchall()]
+                
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "stats": stats,
+                    "history": history,
+                    "sessions": sessions
+                }).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": str(e)
+                }).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/"):
             self.proxy_to_agent("GET")
         else:
             self.send_error(404, "Not Found")

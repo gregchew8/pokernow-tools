@@ -659,42 +659,6 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Agent] Error reading admin_activity.json: {e}")
             self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
-        elif path == "/analytics":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            from web_ui import WebUIHandler
-            self.wfile.write(WebUIHandler.get_html_analytics(None).encode("utf-8"))
-        elif path.startswith("/api/player-stats"):
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            
-            query = urllib.parse.parse_qs(parsed_path.query)
-            start_date = query.get("start_date", [None])[0]
-            end_date = query.get("end_date", [None])[0]
-            
-            try:
-                from db_client import DBClient
-                db = DBClient()
-                stats = db.get_player_stats(start_date, end_date)
-                history = db.get_player_history(start_date, end_date)
-                
-                # Fetch all unique session dates
-                sessions_cursor = db.execute("SELECT ledger_date FROM sessions ORDER BY ledger_date ASC")
-                sessions = [r[0] if db.is_postgres else r["ledger_date"] for r in sessions_cursor.fetchall()]
-                
-                self.wfile.write(json.dumps({
-                    "success": True,
-                    "stats": stats,
-                    "history": history,
-                    "sessions": sessions
-                }).encode("utf-8"))
-            except Exception as e:
-                self.wfile.write(json.dumps({
-                    "success": False,
-                    "error": str(e)
-                }).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
