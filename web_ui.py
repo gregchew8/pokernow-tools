@@ -1414,11 +1414,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
             🛑 Automatic schedule run has been manually skipped for tonight!
         </div>
 
-        <div id="draft-banner" class="banner banner-info" style="display: none;">
-            <span>📧 Pending email draft: <strong id="draft-subject" style="color: #fff;"></strong></span>
-            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
-                <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0;" onclick="discardDraft()">Discard</button>
-                <button class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: var(--success);" onclick="approveDraft()">Send Email Now</button>
+        <div id="draft-banner" class="banner banner-info" style="display: none; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 1rem;">
+            <div style="display: flex; align-items: center; width: 100%;">
+                <span>📧 Pending email draft: <strong id="draft-subject" style="color: #fff;"></strong></span>
+                <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: rgba(255,255,255,0.08);" onclick="toggleDraftPreview()">Preview Email</button>
+                    <button class="btn-action btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0;" onclick="discardDraft()">Discard</button>
+                    <button class="btn-action btn-primary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; margin: 0; background: var(--success);" onclick="approveDraft()">Send Email Now</button>
+                </div>
+            </div>
+            <div id="draft-preview-box" style="display: none; margin-top: 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); padding: 1rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #cbd5e1; max-height: 300px; overflow-y: auto; white-space: pre-wrap; text-align: left; width: 100%; box-sizing: border-box;">
             </div>
         </div>
 
@@ -1997,8 +2002,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     if (data.pending_email && data.pending_email.has_draft) {
                         draftBanner.style.display = 'flex';
                         document.getElementById('draft-subject').textContent = data.pending_email.subject;
+                        document.getElementById('draft-preview-box').textContent = data.pending_email.body || '';
                     } else {
                         draftBanner.style.display = 'none';
+                        document.getElementById('draft-preview-box').style.display = 'none';
                     }
                 })
                 .catch(err => console.error("Error updating dashboard:", err));
@@ -2450,6 +2457,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     alert("Error discarding email: " + err);
                     updateDashboard();
                 });
+        }
+
+        function toggleDraftPreview() {
+            const previewBox = document.getElementById('draft-preview-box');
+            if (previewBox.style.display === 'none') {
+                previewBox.style.display = 'block';
+            } else {
+                previewBox.style.display = 'none';
+            }
         }
 
         function killTask(taskName) {
