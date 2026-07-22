@@ -2591,7 +2591,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             </div>
 
             <!-- Logs Section -->
-            <div id="admin-logs-card" class="card full-width admin-only" style="position: relative;">
+            <div id="admin-logs-card" class="card full-width" style="position: relative;">
                 <h2>System Logs & Outputs</h2>
                 
                 <!-- PIN Overlay -->
@@ -2606,7 +2606,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <div id="pin-error-msg" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.75rem; display: none;">Invalid PIN!</div>
                 </div>
 
-                <div id="admin-logs-content" style="display: none;">
+                <div id="admin-logs-content" class="admin-only" style="display: none;">
                     <div id="announcer-stdout-container" class="console-container">
                         <div class="console-header">
                             <span>Announcer Logs (Stdout)</span>
