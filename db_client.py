@@ -183,8 +183,8 @@ class DBClient:
             except Exception as e:
                 print(f"[DBClient] Error reading payment_info.csv: {e}")
                 
-        if not csv_content and os.environ.get("GOOGLE_SHEET_CSV_URL"):
-            url = os.environ.get("GOOGLE_SHEET_CSV_URL")
+        if not csv_content:
+            url = os.environ.get("GOOGLE_SHEET_CSV_URL") or "https://docs.google.com/spreadsheets/d/1PFXYAqC0UW7m9J-QnhSGSMgd0r4grw5xRSRo4TJc2o0/export?format=csv&gid=2040619431"
             try:
                 import urllib.request
                 req = urllib.request.Request(
