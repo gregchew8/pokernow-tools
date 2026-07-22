@@ -323,7 +323,7 @@ class DBClient:
             if self.is_postgres:
                 nickname = r[0]
                 net = int(r[2])
-                date = r[3]
+                date = str(r[3])
             else:
                 nickname = r["player_nickname"]
                 net = r["net"]
