@@ -83,7 +83,14 @@ This document details the system design, process execution boundaries, and netwo
 ### 2. What the Mac Mini Handles (Hardware & Security Constraints)
 - **Local Browser Automation (Playwright / AppleScript)**: Creates Poker Now rooms, toggles configurations, parses table logs, and downloads CSV ledgers. (Must run on physical host due to Turnstile Cloudflare bypass mechanics).
 - **Outbound Email Relay (SMTP)**: Routes OTP and settlement emails via local ISP network (bypassing Railway's outbound SMTP block).
-- **Cron Scheduling (`launchd`)**: Triggers automated announcer runs at 5:00 PM and automated settlements at 8:00 AM.
+- **Cron Scheduling (`launchd`)**: Triggers automated announcer runs at 5:00 PM and automated settlements at dynamic times configured on the calendar UI (Tuesday & Thursday at 6:00 AM; Saturday & Sunday at 8:00 AM).
+
+---
+
+## Soft-Delete Queue & Stats Inclusion Toggles
+
+- **Soft-Deletion (`deleted_at`)**: Instead of running destructive query purges, session deletions are soft-deleted by setting the `deleted_at` field in Postgres to the deletion timestamp. The analytics engine excludes records with a non-null `deleted_at` from win/loss stats and chart trajectories. Soft-deleted files are kept in a separate, collapsible **Recently Deleted** queue for 30 days before being automatically purged on process boot.
+- **Stats Inclusion switches**: Built OS X style custom slide switches in the HTML rendering of active sessions. These allow excluding older or irrelevant sessions (e.g. 2022 stats) from calculations dynamically. Toggle handlers include bubble event propagation cancellation (`e.stopPropagation()`) to enable clicking anywhere on a table row to toggle inclusion without triggering delete button conflicts.
 
 ---
 
@@ -91,17 +98,21 @@ This document details the system design, process execution boundaries, and netwo
 
 To prevent casual eyes from inspecting administrative operations or activity logs, the dashboard integrates a modular secure locking system:
 
+* **Activity Log PIN Lock**: Admin Activity Logs card is always locked behind the hashed SHA-256 PIN validation.
+* **System Logs & Outputs**: System logs remain unlocked by default. However, a checkbox toggle (`Hide System Logs & Outputs behind PIN`) inside the Activity Logs card allows dynamically hiding the System Logs behind the PIN.
+* **Persistent Session Locking**: A client-side listener wipes the `admin_unlocked` variable from the browser's `sessionStorage` on logout or session expiration, forcing the dashboard cards to re-lock.
+
 ```text
 [ ADMIN_PIN (config) ] --(SHA-256 Hash)--> [ HTML Template replacement ]
                                                        |
                                                        v
 [ Entered PIN string ] --(SHA-256 Hash)--> [ Browser validation comparison ]
                                                        |
-                  +------------------------------------+------------------------------------+
-                  | Match                                                                   | Mismatch
-                  v                                                                         v
-   [ Remove .admin-locked CSS class ]                                        [ Display "Invalid PIN" ]
-   [ sessionStorage.admin_unlocked = true ]                                  [ Reset and focus input ]
+                                  +--------------------+--------------------+
+                                  | Match                                   | Mismatch
+                                  v                                         v
+               [ Remove .admin-locked CSS class ]            [ Display "Invalid PIN" ]
+               [ sessionStorage.admin_unlocked = true ]      [ Reset and focus input ]
 ```
 
 - **Hashing Security**: The PIN is hashed using SHA-256 on the server-side (`hashlib`) before being injected into the HTML response. The user's input is hashed in-browser via the Web Cryptography API (`crypto.subtle.digest`). The raw PIN is never transmitted in cleartext or saved in the JavaScript source.
