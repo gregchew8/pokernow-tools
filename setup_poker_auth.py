@@ -19,7 +19,7 @@ def inject_js(js_code, target_url="pokernow.com"):
     # Escape quotes and backslashes for AppleScript string literal
     escaped_js = js_code.replace('\\', '\\\\').replace('"', '\\"')
     
-    if target_url == "pokernow.com" or not target_url:
+    if target_url in ("pokernow.com", "pokernow.club") or not target_url:
         # Default to executing on the active tab of the front window to avoid mixing up multiple tabs
         script = f"""
         tell application "Google Chrome"
@@ -63,7 +63,7 @@ def run(tables_to_create):
         "--password-store=basic",
         "--no-first-run",
         "--no-default-browser-check",
-        "https://www.pokernow.com/start-game"
+        "https://www.pokernow.club/start-game"
     ]
     
     # Launch main process natively - NO Playwright Debugging Ports!
@@ -83,7 +83,7 @@ def run(tables_to_create):
         
         if idx > 0:
             print("Opening new tab for next table...")
-            run_applescript('tell application "Google Chrome" to tell front window to make new tab with properties {URL:"https://www.pokernow.com/start-game"}')
+            run_applescript('tell application "Google Chrome" to tell front window to make new tab with properties {URL:"https://www.pokernow.club/start-game"}')
             time.sleep(3)
         
         print("============================================================")
@@ -103,9 +103,9 @@ def run(tables_to_create):
                 set urlList to {}
                 repeat with w in windows
                     repeat with t in tabs of w
-                        if URL of t contains "pokernow.com" then
-                            set end of urlList to URL of t
-                        end if
+                        if URL of t contains "pokernow.com" or URL of t contains "pokernow.club" then
+                             set end of urlList to URL of t
+                         end if
                     end repeat
                 end repeat
                 set AppleScript's text item delimiters to "\\n"
@@ -116,7 +116,7 @@ def run(tables_to_create):
             
             # Check if a new game URL appeared
             for u in all_urls:
-                if "pokernow.com/games/" in u and u not in known_game_urls:
+                if ("pokernow.com/games/" in u or "pokernow.club/games/" in u) and u not in known_game_urls:
                     detected_url = u
                     known_game_urls.add(u)
                     break
