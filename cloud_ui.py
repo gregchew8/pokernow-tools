@@ -153,6 +153,9 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script>
+        sessionStorage.removeItem('admin_unlocked');
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LCR Poker Admin - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -439,23 +442,43 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             # Inject Admin activity logs card
             admin_logs_html = """
             <!-- Admin Logs Section -->
-            <div class="card full-width">
+            <div class="card full-width" style="position: relative;">
                 <h2>Admin Activity Logs</h2>
-                <div style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(15,23,42,0.4); padding: 10px;">
-                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; font-family:'Outfit',sans-serif;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-weight: 600;">
-                                <th style="padding: 8px;">Time</th>
-                                <th style="padding: 8px;">Admin</th>
-                                <th style="padding: 8px;">Action</th>
-                                <th style="padding: 8px;">Details</th>
-                                <th style="padding: 8px;">IP</th>
-                            </tr>
-                        </thead>
-                        <tbody id="admin-activity-table-body">
-                            <tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">Loading activity logs...</td></tr>
-                        </tbody>
-                    </table>
+                
+                <!-- PIN Overlay -->
+                <div id="activity-pin-overlay" style="display: none; padding: 2.5rem 1rem; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+                    <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-color);">Admin logs are locked</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Please enter the 4-digit PIN to view activity logs.</p>
+                    <div style="display: flex; justify-content: center; gap: 0.5rem; align-items: center; max-width: 320px; margin: 0 auto;">
+                        <input type="password" id="admin-pin-input" maxlength="4" placeholder="••••" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; padding: 0.6rem; font-size: 1.1rem; letter-spacing: 0.5em; text-align: center; width: 120px; font-family: monospace;" onkeyup="checkPinInput(event)">
+                        <button class="btn-action btn-primary" onclick="unlockAdminLogs()" style="margin: 0; padding: 0.6rem 1.2rem;">Unlock</button>
+                    </div>
+                    <div id="pin-error-msg" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.75rem; display: none;">Invalid PIN!</div>
+                </div>
+
+                <div id="admin-activity-content" style="display: none;">
+                    <div style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(15, 23, 42, 0.4); padding: 10px;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; font-family:'Outfit',sans-serif;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-weight: 600;">
+                                    <th style="padding: 8px;">Time</th>
+                                    <th style="padding: 8px;">Admin</th>
+                                    <th style="padding: 8px;">Action</th>
+                                    <th style="padding: 8px;">Details</th>
+                                    <th style="padding: 8px;">IP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-activity-table-body">
+                                <tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">Loading activity logs...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="chk-system-logs-pin" style="cursor: pointer;" onchange="toggleSystemLogsPin(this)">
+                        <label for="chk-system-logs-pin" style="cursor: pointer;">Hide System Logs & Outputs behind PIN</label>
+                    </div>
                 </div>
             </div>
             

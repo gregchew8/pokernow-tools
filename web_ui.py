@@ -2595,19 +2595,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
             <div id="admin-logs-card" class="card full-width" style="position: relative;">
                 <h2>System Logs & Outputs</h2>
                 
-                <!-- PIN Overlay -->
-                <div id="logs-pin-overlay" style="display: none; padding: 2.5rem 1rem; text-align: center;">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
-                    <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-color);">Admin logs are locked</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Please enter the 4-digit PIN to view activity logs.</p>
-                    <div style="display: flex; justify-content: center; gap: 0.5rem; align-items: center; max-width: 320px; margin: 0 auto;">
-                        <input type="password" id="admin-pin-input" maxlength="4" placeholder="••••" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; padding: 0.6rem; font-size: 1.1rem; letter-spacing: 0.5em; text-align: center; width: 120px; font-family: monospace;" onkeyup="checkPinInput(event)">
-                        <button class="btn-action btn-primary" onclick="unlockAdminLogs()" style="margin: 0; padding: 0.6rem 1.2rem;">Unlock</button>
-                    </div>
-                    <div id="pin-error-msg" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.75rem; display: none;">Invalid PIN!</div>
-                </div>
-
-                <div id="admin-logs-content" class="admin-only" style="display: none;">
+                <div id="admin-logs-content">
                     <div id="announcer-stdout-container" class="console-container">
                         <div class="console-header">
                             <span>Announcer Logs (Stdout)</span>
@@ -3569,20 +3557,37 @@ class WebUIHandler(BaseHTTPRequestHandler):
         const PIN_HASH = "{{ADMIN_PIN_HASH}}";
         
         function initAdminLock() {
-            if (PIN_HASH) {
-                if (sessionStorage.getItem('admin_unlocked') === 'true') {
-                    document.body.classList.remove('admin-locked');
-                    document.getElementById('logs-pin-overlay').style.display = 'none';
-                    document.getElementById('admin-logs-content').style.display = 'block';
+            const systemLogsCard = document.getElementById('admin-logs-card');
+            const pinRequiredForSystem = localStorage.getItem('system_logs_pin_required') === 'true';
+            
+            // Sync checkbox checked state if present
+            const chkSystem = document.getElementById('chk-system-logs-pin');
+            if (chkSystem) {
+                chkSystem.checked = pinRequiredForSystem;
+            }
+
+            const isLocked = PIN_HASH && (sessionStorage.getItem('admin_unlocked') !== 'true');
+
+            // System Logs Hiding Toggle logic
+            if (systemLogsCard) {
+                if (pinRequiredForSystem && isLocked) {
+                    systemLogsCard.style.display = 'none';
                 } else {
-                    document.body.classList.add('admin-locked');
-                    document.getElementById('logs-pin-overlay').style.display = 'block';
-                    document.getElementById('admin-logs-content').style.display = 'none';
+                    systemLogsCard.style.display = 'block';
                 }
-            } else {
-                document.body.classList.remove('admin-locked');
-                document.getElementById('logs-pin-overlay').style.display = 'none';
-                document.getElementById('admin-logs-content').style.display = 'block';
+            }
+
+            // Admin Activity Logs lock logic
+            const activityOverlay = document.getElementById('activity-pin-overlay');
+            const activityContent = document.getElementById('admin-activity-content');
+            if (activityOverlay && activityContent) {
+                if (isLocked) {
+                    activityOverlay.style.display = 'block';
+                    activityContent.style.display = 'none';
+                } else {
+                    activityOverlay.style.display = 'none';
+                    activityContent.style.display = 'block';
+                }
             }
         }
         
@@ -3601,16 +3606,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
             const hash = await sha256(inputVal);
             if (hash === PIN_HASH) {
                 sessionStorage.setItem('admin_unlocked', 'true');
-                document.body.classList.remove('admin-locked');
-                document.getElementById('logs-pin-overlay').style.display = 'none';
-                document.getElementById('admin-logs-content').style.display = 'block';
                 errorMsg.style.display = 'none';
+                initAdminLock();
                 updateDashboard();
+                if (typeof loadAdminActivityLogs === 'function') {
+                    loadAdminActivityLogs();
+                }
             } else {
                 errorMsg.style.display = 'block';
                 document.getElementById('admin-pin-input').value = '';
                 document.getElementById('admin-pin-input').focus();
             }
+        }
+        
+        function toggleSystemLogsPin(checkbox) {
+            localStorage.setItem('system_logs_pin_required', checkbox.checked ? 'true' : 'false');
+            initAdminLock();
         }
         
         function checkPinInput(event) {
