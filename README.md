@@ -11,8 +11,11 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
 1. **Lobby Setup Automation** (`setup_poker_auth.py` & `login.py`)
    - Logs into your Poker Now owner lobby.
    - **Hybrid OS-Level Bypass & Pure JS Injection**: Completely evades Cloudflare Turnstile bot protection by launching a *clean* Chrome instance without Playwright or CDP. 
+   - **Single-Window Sequential Setup**: Opens and closes a dedicated, fresh Chrome window for each table sequentially (via `--new-window`) rather than spawning multiple tabs in a single window. This eliminates focus conflicts and window index crashes.
+   - **Chrome Session Cache Cleanup**: Automatically clears the profile's active `Sessions` directory before launch to prevent Chrome from restoring previous table tabs, ensuring a completely clean run.
    - **Preserves Active Session**: Keeps the original Chrome window open to prevent LevelDB session corruption and guarantee that Game Configurations are accessible as the fully authenticated Room Owner.
    - **Flawless DOM Traversal & Mithril.js Sync**: Uses AppleScript to inject highly advanced JavaScript DOM traversal directly into the active tab. It intelligently handles Mithril.js virtual DOM race conditions by asynchronously staggering input typing and button clicking, guaranteeing the UI state is synced before form submission.
+   - **Strict Input Target Selection**: Limits the JavaScript query selector to inputs explicitly containing "Nickname" or "Name" in their placeholders. This prevents collision issues where the script mistakenly targeted hidden Cloudflare Turnstile token inputs.
    - **macOS System Permissions**: Native OS-level AppleScript injection requires the "Allow JavaScript from Apple Events" permission to be enabled in Chrome (`View > Developer > Allow JavaScript from Apple Events`). The script includes diagnostic logging to automatically surface if this permission is revoked by Chrome updates.
    - Copies ready-to-share links and commands to the clipboard along with an email subject line.
    - (Playwright is preserved only for background automated settlement parsing where Turnstile is not active).
@@ -45,11 +48,12 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
       - **Access & PIN security**:
         - Hides sensitive outputs (such as activity logs or custom admin panels) behind a 4-digit PIN lock.
         - Stores the target PIN as a SHA-256 hash to prevent raw code exposure in the browser, and uses native browser cryptography to validate inputs.
-        - Retains unlock status securely using browser `sessionStorage`.
-        - Enabled by setting the `ADMIN_PIN` variable in your `.env` or Railway panel (defaults to fully unlocked if blank).
+        - Retains unlock status securely using browser `sessionStorage` and persistent database tokens.
+        - Enabled by setting the `ADMIN_PIN` variable in your `.env` or Railway panel.
         - Any elements containing the `admin-only` CSS class will automatically hide/lock when the PIN is enabled.
-    - **Historical Group Settlements Importer** (`import_text_settlements.py`)
-      - Scrapes archived Google Groups payout announcements, computes individual player net profits, ignores duplicate dates, and automatically backfills historical session records directly to PostgreSQL.
+      - **Database-backed Persistent Sessions**: Web sessions are stored in the PostgreSQL database with a **7-day lifetime** instead of in-memory lists, preserving your login state across Railway redeploys or browser restarts.
+    - **Historical Group Settlements Importer** (`import_text_settlements.py` & `scratch/import_mon_settlement.py`)
+      - Scrapes archived Google Groups payout announcements or parses manual text copies, computes individual player net profits, verifies zero-sums, and automatically backfills/inserts historical session records directly to PostgreSQL.
     - **Replication Script** (`sync_to_drive.sh`)
       - Replicates local changes and logs back to your Google Drive backup.
 
