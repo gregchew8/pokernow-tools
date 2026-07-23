@@ -90,6 +90,10 @@ class DBClient:
         if self.conn:
             self.conn.commit()
 
+    def rollback(self):
+        if self.conn:
+            self.conn.rollback()
+
     def close(self):
         if self.conn:
             self.conn.close()
@@ -110,7 +114,11 @@ class DBClient:
             self.execute("ALTER TABLE sessions ADD COLUMN excluded INTEGER DEFAULT 0")
             self.commit()
         except Exception:
-            pass
+            try:
+                if self.conn:
+                    self.conn.rollback()
+            except Exception:
+                pass
 
         # Create player ledger records table
         id_type = "SERIAL PRIMARY KEY" if self.is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
