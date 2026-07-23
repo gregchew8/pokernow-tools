@@ -10,6 +10,8 @@ except ImportError:
     HAS_PG8000 = False
 
 class DBClient:
+    _tables_setup = False
+
     def __init__(self):
         self.db_url = os.environ.get("DATABASE_URL", "").strip()
         self.is_postgres = False
@@ -24,7 +26,9 @@ class DBClient:
                 print("[DBClient] WARNING: DATABASE_URL provided but pg8000 is not installed. Falling back to local SQLite.")
         
         self.connect()
-        self.setup_tables()
+        if not DBClient._tables_setup:
+            self.setup_tables()
+            DBClient._tables_setup = True
 
     def connect(self):
         if self.is_postgres:
@@ -42,7 +46,8 @@ class DBClient:
                     password=password,
                     host=hostname,
                     port=port,
-                    database=database
+                    database=database,
+                    timeout=5
                 )
                 print("[DBClient] Successfully connected to PostgreSQL database on Railway.")
                 return
