@@ -142,7 +142,7 @@ def run(tables_to_create):
             if any("start-game" in u for u in all_urls):
                 # Inject JS to fill Nickname (if empty) and click Create
                 js = """
-                var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[type="text"]') || document.querySelector('input');
+                var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[placeholder*="Name"]');
                 if (input) {
                     if (input.value !== 'Dealer') {
                         let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
