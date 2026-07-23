@@ -2479,7 +2479,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <p class="subtitle">Launches room creations & sends email announcements based on today's schedule config.</p>
                 <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
                     <input type="checkbox" id="chk-announcer-test" style="cursor: pointer;">
-                    <label for="chk-announcer-test" style="cursor: pointer;" title="Creates tables on Poker Now but skips email, discord, and calendar sync.">Run in TEST mode (Table creation only, no notifications)</label>
+                    <label for="chk-announcer-test" style="cursor: pointer;" title="Simulates a run in memory with dummy data, skipping browser table creation, email, and discord notifications.">Run in TEST mode (Simulated run only, no real tables or notifications)</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
                     <input type="checkbox" id="chk-announcer-draft" style="cursor: pointer;">
