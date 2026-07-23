@@ -32,14 +32,18 @@ def inject_js(js_code, target_url="pokernow.com"):
         # Target the specific tab matching the room URL
         script = f"""
         tell application "Google Chrome"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    if URL of t contains "{target_url}" then
-                        execute t javascript "{escaped_js}"
-                        return
-                    end if
+            try
+                repeat with w in windows
+                    try
+                        repeat with t in tabs of w
+                            if URL of t contains "{target_url}" then
+                                execute t javascript "{escaped_js}"
+                                return
+                            end if
+                        end repeat
+                    end try
                 end repeat
-            end repeat
+            end try
         end tell
         """
     return run_applescript(script)
@@ -83,7 +87,14 @@ def run(tables_to_create):
         
         if idx > 0:
             print("Opening new tab for next table...")
-            run_applescript('tell application "Google Chrome" to tell front window to make new tab with properties {URL:"https://www.pokernow.club/start-game"}')
+            subprocess.Popen([
+                chrome_path,
+                f"--user-data-dir={user_data_dir}",
+                "--password-store=basic",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "https://www.pokernow.club/start-game"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(3)
         
         print("============================================================")
@@ -101,13 +112,17 @@ def run(tables_to_create):
             urls_str = run_applescript('''
             tell application "Google Chrome"
                 set urlList to {}
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if URL of t contains "pokernow.com" or URL of t contains "pokernow.club" then
-                             set end of urlList to URL of t
-                         end if
+                try
+                    repeat with w in windows
+                        try
+                            repeat with t in tabs of w
+                                if URL of t contains "pokernow.com" or URL of t contains "pokernow.club" then
+                                     set end of urlList to URL of t
+                                 end if
+                            end repeat
+                        end try
                     end repeat
-                end repeat
+                end try
                 set AppleScript's text item delimiters to "\\n"
                 return urlList as string
             end tell
