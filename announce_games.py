@@ -7,7 +7,7 @@ import subprocess
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-def send_email(subject, html_content, text_content):
+def send_email(subject, html_content, text_content, email_type="announcement"):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "465"))
     sender = os.environ.get("EMAIL_SENDER")
@@ -41,7 +41,10 @@ def send_email(subject, html_content, text_content):
         server.login(sender, password)
         server.sendmail(sender, receiver, msg.as_string())
         server.quit()
-        print(f"Email announcement sent successfully to {receiver}")
+        if email_type == "diagnostic":
+            print(f"Diagnostic alert email sent successfully to {receiver}")
+        else:
+            print(f"Email announcement sent successfully to {receiver}")
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
@@ -289,6 +292,12 @@ def main():
         with open("pending_email.json", "w") as f:
             json.dump(draft_data, f, indent=4)
         print("\n=== Email Draft Saved: Awaiting Approval ===")
+        print("Note: This was created in DRAFT mode. The game announcement email was NOT sent to the players.")
+        print("Instructions to send:")
+        print(" 1. Open the Poker Now Control Panel (via Tailscale on port 8080 or poker.gchew.com).")
+        print(" 2. Scroll to the 'Pending Emails Awaiting Approval' card.")
+        print(" 3. Review the subject and HTML body draft.")
+        print(" 4. Click 'Approve & Send' to dispatch the email to your players, or 'Delete' to discard it.")
     else:
         # Send email
         send_email(subject, html_content, text_content)
@@ -325,7 +334,7 @@ if __name__ == "__main__":
             
             original_receiver = os.environ.get("EMAIL_RECEIVER")
             os.environ["EMAIL_RECEIVER"] = admin_email
-            send_email(subject, basic_html, basic_text)
+            send_email(subject, basic_html, basic_text, email_type="diagnostic")
             
             # 2. Send the verbose instructions specifically to Greg
             greg_subject = f"ACTION REQUIRED: Poker Game Announcer Failed ({datetime.datetime.now().strftime('%Y-%m-%d')})"
@@ -351,7 +360,7 @@ if __name__ == "__main__":
             greg_text = f"Poker Game Announcer Failed\n\nNext Steps for Greg:\n1. Open the Poker Now Control Panel (via Tailscale on port 8080).\n2. Review the System Logs section for Diagnostic Advisor recovery steps.\n3. Click 'Start Table Setup' to try again once fixed.\n\nError details:\n{error_msg}"
             
             os.environ["EMAIL_RECEIVER"] = "gregchew@gmail.com"
-            send_email(greg_subject, greg_html, greg_text)
+            send_email(greg_subject, greg_html, greg_text, email_type="diagnostic")
             
             # Restore original receiver
             if original_receiver:
