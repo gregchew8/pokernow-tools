@@ -96,7 +96,7 @@ def run(tables_to_create):
         run_applescript('tell application "Google Chrome" to activate')
         
         detected_url = None
-        for _ in range(120): # Wait up to 120 seconds for manual Turnstile bypass
+        for _ in range(45): # Wait up to 45 seconds for manual Turnstile bypass
             # Get all URLs of all tabs across all Chrome windows
             urls_str = run_applescript('''
             tell application "Google Chrome"
@@ -145,7 +145,7 @@ def run(tables_to_create):
                     }
                 }
                 """
-                inject_js(js)
+                inject_js(js, target_url="start-game")
                 time.sleep(1)
             
 
