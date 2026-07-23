@@ -122,6 +122,15 @@ class DBClient:
             )
         """)
         
+        # Create web_sessions table
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS web_sessions (
+                session_id VARCHAR(255) PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                expires REAL NOT NULL
+            )
+        """)
+        
         # Postgres index creation
         try:
             self.execute("CREATE INDEX IF NOT EXISTS idx_records_player ON player_ledger_records(player_id)")
@@ -356,3 +365,27 @@ class DBClient:
             
         result.sort(key=lambda x: (x["ledger_date"], x["player_nickname"].lower()))
         return result
+
+    def save_web_session(self, session_id, email, expires):
+        self.execute("DELETE FROM web_sessions WHERE session_id = ?", (session_id,))
+        self.execute("INSERT INTO web_sessions (session_id, email, expires) VALUES (?, ?, ?)", (session_id, email, expires))
+        self.commit()
+
+    def get_web_session(self, session_id):
+        cursor = self.execute("SELECT email, expires FROM web_sessions WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        if self.is_postgres:
+            return {"email": row[0], "expires": float(row[1])}
+        else:
+            return {"email": row["email"], "expires": float(row["expires"])}
+
+    def delete_web_session(self, session_id):
+        self.execute("DELETE FROM web_sessions WHERE session_id = ?", (session_id,))
+        self.commit()
+
+    def clean_expired_web_sessions(self):
+        import time
+        self.execute("DELETE FROM web_sessions WHERE expires < ?", (time.time(),))
+        self.commit()

@@ -126,15 +126,17 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 
     def is_authenticated(self):
         session_id = self.get_session_id()
-        if not session_id or session_id not in session_store:
+        if not session_id:
             return False
-        
-        session = session_store[session_id]
+        from db_client import DBClient
+        db = DBClient()
+        db.clean_expired_web_sessions()
+        session = db.get_web_session(session_id)
+        if not session:
+            return False
         if time.time() > session["expires"]:
-            # Session expired
-            del session_store[session_id]
+            db.delete_web_session(session_id)
             return False
-        
         return True
 
     def serve_login_page(self, email_requested=None, error_msg=None):
@@ -343,8 +345,12 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 
         session_id = self.get_session_id()
         email = ""
-        if session_id and session_id in session_store:
-            email = session_store[session_id].get("email", "")
+        if session_id:
+            from db_client import DBClient
+            db = DBClient()
+            session = db.get_web_session(session_id)
+            if session:
+                email = session.get("email", "")
         client_ip = self.headers.get("X-Forwarded-For") or self.client_address[0]
 
         # Forward the path and query string exactly to the agent
@@ -401,11 +407,15 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             
         elif path == "/logout":
             session_id = self.get_session_id()
-            if session_id in session_store:
-                email = session_store[session_id].get("email")
-                if email:
-                    log_activity_to_agent(email, "Logout", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
-                del session_store[session_id]
+            if session_id:
+                from db_client import DBClient
+                db = DBClient()
+                session = db.get_web_session(session_id)
+                if session:
+                    email = session.get("email")
+                    if email:
+                        log_activity_to_agent(email, "Logout", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
+                    db.delete_web_session(session_id)
             self.send_response(303)
             self.send_header("Set-Cookie", "session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax")
             self.send_header("Location", "/login")
@@ -626,18 +636,18 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.wfile.write(dashboard_html.encode("utf-8"))
             
         elif path == "/api/active-sessions":
-            # Clean expired sessions
-            now = time.time()
-            expired_keys = [k for k, v in session_store.items() if now > v["expires"]]
-            for k in expired_keys:
-                del session_store[k]
+            from db_client import DBClient
+            db = DBClient()
+            db.clean_expired_web_sessions()
                 
             current_session_id = self.get_session_id()
             sessions_list = []
-            for sid, info in session_store.items():
+            cursor = db.execute("SELECT session_id, email, expires FROM web_sessions ORDER BY expires DESC")
+            for r in cursor.fetchall():
+                sid, email, expires = (r[0], r[1], float(r[2])) if db.is_postgres else (r["session_id"], r["email"], float(r["expires"]))
                 sessions_list.append({
-                    "email": info["email"],
-                    "expires": info["expires"],
+                    "email": email,
+                    "expires": expires,
                     "is_current": (sid == current_session_id)
                 })
             self.send_response(200)
@@ -765,10 +775,10 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 
             # Generate session
             session_id = secrets.token_hex(32)
-            session_store[session_id] = {
-                "email": email,
-                "expires": time.time() + 1800  # 30 minutes session
-            }
+            session_duration = 604800  # 7 days session duration
+            from db_client import DBClient
+            db = DBClient()
+            db.save_web_session(session_id, email, time.time() + session_duration)
             log_activity_to_agent(email, "Login", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
 
             self.send_response(303)
@@ -787,13 +797,17 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 
         if path == "/api/renew-session":
             session_id = self.get_session_id()
-            if session_id in session_store:
-                session_store[session_id]["expires"] = time.time() + 1800 # 30 mins
+            from db_client import DBClient
+            db = DBClient()
+            session = db.get_web_session(session_id) if session_id else None
+            if session:
+                session_duration = 604800  # 7 days session duration
+                db.save_web_session(session_id, session["email"], time.time() + session_duration)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax")
+                self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age={session_duration}; HttpOnly; SameSite=Lax")
                 self.end_headers()
-                self.wfile.write(json.dumps({"success": True, "expires": session_store[session_id]["expires"]}).encode("utf-8"))
+                self.wfile.write(json.dumps({"success": True, "expires": time.time() + session_duration}).encode("utf-8"))
             else:
                 self.send_response(401)
                 self.send_header("Content-Type", "application/json")
