@@ -1253,9 +1253,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Poker Player Analytics</h1>
-            <p class="subtitle">Wins/Losses & Win Rate Performance Dashboard</p>
+        <header style="position: relative; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+            <div>
+                <h1 style="margin: 0;">Poker Player Analytics</h1>
+                <p class="subtitle" style="margin: 5px 0 0 0;">Wins/Losses & Win Rate Performance Dashboard</p>
+            </div>
+            <div id="db-health-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(30, 41, 59, 0.5); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
+                <span id="db-health-light" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; box-shadow: 0 0 8px #94a3b8; display: inline-block; transition: all 0.3s ease;"></span>
+                <span id="db-health-text">DB Connecting...</span>
+            </div>
         </header>
 
         <!-- Filters -->
@@ -1462,10 +1468,33 @@ class WebUIHandler(BaseHTTPRequestHandler):
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
+                    const light = document.getElementById('db-health-light');
+                    const text = document.getElementById('db-health-text');
+                    
                     if (!data.success) {
                         console.error("Failed to load player stats:", data.error);
+                        if (light && text) {
+                            light.style.background = '#ef4444';
+                            light.style.boxShadow = '0 0 10px #ef4444';
+                            text.textContent = 'DB Error (' + (data.db_type || 'Unknown') + ')';
+                        }
                         return;
                     }
+                    
+                    if (light && text) {
+                        const isHealthy = data.db_healthy;
+                        const dbType = data.db_type || 'Unknown';
+                        if (isHealthy) {
+                            light.style.background = '#10b981';
+                            light.style.boxShadow = '0 0 10px #10b981';
+                            text.textContent = 'DB Online (' + dbType + ')';
+                        } else {
+                            light.style.background = '#f59e0b';
+                            light.style.boxShadow = '0 0 10px #f59e0b';
+                            text.textContent = 'DB Offline (' + dbType + ')';
+                        }
+                    }
+                    
                     originalStatsData = data;
                     populatePlayerCheckboxes(data.stats);
                     updateAnalyticsUI(data);
@@ -1852,6 +1881,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         console.error("Error deleting session:", err);
                         alert("Error deleting session.");
                     });
+            }
         }
         
         function toggleSessionExclude(date, excluded) {
@@ -1879,11 +1909,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
             } else {
                 content.style.display = 'none';
                 arrow.textContent = '▼ Expand';
-            }
-        }
-                        console.error(err);
-                        alert("Error connecting to server to delete session.");
-                    });
             }
         }
 
