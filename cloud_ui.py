@@ -676,7 +676,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                     "stats": stats,
                     "history": history,
                     "sessions": sessions,
-                    "db_type": "Postgres" if db.is_postgres else f"SQLite (Fallback: {db.error_msg})"
+                    "db_type": "Postgres" if db.is_postgres else f"SQLite (Fallback: {db.error_msg}, env keys: {list(os.environ.keys())})"
                 }).encode("utf-8"))
             except Exception as e:
                 self.wfile.write(json.dumps({
