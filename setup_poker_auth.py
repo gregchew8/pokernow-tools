@@ -78,6 +78,7 @@ def run(tables_to_create):
             "--password-store=basic",
             "--no-first-run",
             "--no-default-browser-check",
+            "--new-window",
             "https://www.pokernow.club/start-game"
         ]
         chrome_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
