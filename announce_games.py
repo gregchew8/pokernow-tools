@@ -166,22 +166,8 @@ def main():
                     tables = day_config.get("tables", [])
                     if tables:
                         print(f"Loaded schedule for {day_name.capitalize()}: {tables}")
-                        # Run setup for each table individually
-                        for tbl in tables:
-                            game_type = tbl.get("type", "nlh")
-                            sb = tbl.get("sb", "0.25")
-                            bb = tbl.get("bb", "0.50")
-                            table_args = [game_type, "1", "--sb", sb, "--bb", bb]
-                            print(f"Running table creation: {' '.join([sys.executable, 'setup_poker_auth.py'] + table_args)}")
-                            result = subprocess.run([sys.executable, "setup_poker_auth.py"] + table_args,
-                                                    capture_output=True, text=True)
-                            print(result.stdout)
-                            if result.stderr:
-                                print(result.stderr, file=sys.stderr)
-                            if result.returncode != 0:
-                                raise RuntimeError(f"Table creation failed for {game_type} with sb={sb}, bb={bb}. Exit code {result.returncode}\n{result.stderr}")
-                        # After creating tables, clear args to skip final call
-                        args = []
+                        config_str = json.dumps(tables)
+                        args = ["--config", config_str]
                     else:
                         print(f"Warning: No tables defined for {day_name} in {schedule_file}. Using default configuration.")
                         args = ["nlh", "2", "--sb", "0.25", "--bb", "0.50"]

@@ -70,7 +70,16 @@ def run(tables_to_create):
         print(f" TABLE {idx+1} of {total_tables}: {game_type.upper()} ({sb}/{bb})")
         print(f"============================================================")
         
-        # 1. Open the Turnstile-bypassing Chrome window for this table
+        # 1. Clear previous session tabs to prevent Chrome from restoring them
+        import shutil
+        sessions_dir = os.path.join(user_data_dir, "Default", "Sessions")
+        if os.path.exists(sessions_dir):
+            try:
+                shutil.rmtree(sessions_dir)
+            except Exception:
+                pass
+
+        # 2. Open the Turnstile-bypassing Chrome window for this table
         print(f"Launching clean Google Chrome window for Table {idx+1}...")
         cmd = [
             chrome_path,
