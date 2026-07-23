@@ -1376,19 +1376,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
         
         <!-- Database & Session History -->
         <div class="card full-width">
-            <h2>Database & Session History</h2>
-            <div style="margin-top: 1rem; overflow-x: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" onclick="toggleCardCollapse('sessions-collapse-content', 'sessions-toggle-arrow')">
+                <h2 style="margin: 0;">Database & Session History</h2>
+                <span id="sessions-toggle-arrow" style="font-size: 1rem; color: var(--text-muted); transition: transform 0.2s;">▼ Expand</span>
+            </div>
+            <div id="sessions-collapse-content" style="margin-top: 1rem; overflow-x: auto; display: none;">
                 <table class="stats-table" style="font-size: 0.9rem;">
                     <thead>
                         <tr>
                             <th style="text-align: left; padding: 10px;">Session Date</th>
                             <th style="text-align: left; padding: 10px;">Filename Reference</th>
+                            <th style="text-align: center; padding: 10px; width: 140px;">Include in Stats</th>
                             <th style="text-align: right; padding: 10px; width: 120px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="sessions-table-body">
                         <tr>
-                            <td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            <td colspan="4" style="text-align: center; padding: 20px; color: var(--text-muted);">
                                 Loading sessions...
                             </td>
                         </tr>
@@ -1809,14 +1813,26 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     };
                     delBtn.onclick = () => deleteSession(sess.date);
                     
+                    const includeTd = document.createElement('td');
+                    includeTd.style.padding = '12px 10px';
+                    includeTd.style.textAlign = 'center';
+                    
+                    const chk = document.createElement('input');
+                    chk.type = 'checkbox';
+                    chk.style.cursor = 'pointer';
+                    chk.checked = !sess.excluded;
+                    chk.onchange = () => toggleSessionExclude(sess.date, !chk.checked);
+                    includeTd.appendChild(chk);
+                    
                     actionTd.appendChild(delBtn);
                     tr.appendChild(dateTd);
                     tr.appendChild(fileTd);
+                    tr.appendChild(includeTd);
                     tr.appendChild(actionTd);
                     sessionsBody.appendChild(tr);
                 });
             } else {
-                sessionsBody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">No sessions in database.</td></tr>`;
+                sessionsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-muted);">No sessions in database.</td></tr>`;
             }
         }
 
@@ -1833,6 +1849,38 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         }
                     })
                     .catch(err => {
+                        console.error("Error deleting session:", err);
+                        alert("Error deleting session.");
+                    });
+        }
+        
+        function toggleSessionExclude(date, excluded) {
+            fetch(`/api/toggle-session-exclude?date=${date}&excluded=${excluded}`)
+                .then(res => res.json())
+                .then(res => {
+                    if (res.success) {
+                        loadAnalyticsData();
+                    } else {
+                        alert(`Failed to toggle session stats inclusion: ${res.error}`);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error toggling session include:", err);
+                    alert("Error toggling session stats inclusion.");
+                });
+        }
+        
+        function toggleCardCollapse(contentId, arrowId) {
+            const content = document.getElementById(contentId);
+            const arrow = document.getElementById(arrowId);
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                arrow.textContent = '▲ Collapse';
+            } else {
+                content.style.display = 'none';
+                arrow.textContent = '▼ Expand';
+            }
+        }
                         console.error(err);
                         alert("Error connecting to server to delete session.");
                     });

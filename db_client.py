@@ -100,9 +100,17 @@ class DBClient:
             CREATE TABLE IF NOT EXISTS sessions (
                 ledger_date TEXT PRIMARY KEY,
                 filename TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                excluded INTEGER DEFAULT 0
             )
         """)
+        
+        # Run migration to add excluded column to existing table if not present
+        try:
+            self.execute("ALTER TABLE sessions ADD COLUMN excluded INTEGER DEFAULT 0")
+            self.commit()
+        except Exception:
+            pass
 
         # Create player ledger records table
         id_type = "SERIAL PRIMARY KEY" if self.is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
@@ -230,7 +238,7 @@ class DBClient:
         query = """
             SELECT player_nickname, player_id, buy_in, net
             FROM player_ledger_records
-            WHERE 1=1
+            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1)
         """
         params = []
         if start_date:
@@ -316,7 +324,7 @@ class DBClient:
         query = """
             SELECT player_nickname, player_id, net, ledger_date
             FROM player_ledger_records
-            WHERE 1=1
+            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1)
         """
         params = []
         if start_date:

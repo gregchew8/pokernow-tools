@@ -701,8 +701,22 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 stats = db.get_player_stats(start_date, end_date)
                 history = db.get_player_history(start_date, end_date)
                 
-                sessions_cursor = db.execute("SELECT ledger_date, filename FROM sessions ORDER BY ledger_date DESC")
-                sessions = [{"date": str(r[0]), "filename": r[1]} if db.is_postgres else {"date": str(r["ledger_date"]), "filename": r["filename"]} for r in sessions_cursor.fetchall()]
+                sessions_cursor = db.execute("SELECT ledger_date, filename, excluded FROM sessions ORDER BY ledger_date DESC")
+                sessions = []
+                for r in sessions_cursor.fetchall():
+                    if db.is_postgres:
+                        date_str = str(r[0])
+                        filename = r[1]
+                        excluded = bool(r[2])
+                    else:
+                        date_str = str(r["ledger_date"])
+                        filename = r["filename"]
+                        excluded = bool(r["excluded"])
+                    sessions.append({
+                        "date": date_str,
+                        "filename": filename,
+                        "excluded": excluded
+                    })
                 
                 self.wfile.write(json.dumps({
                     "success": True,
@@ -716,6 +730,26 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                     "success": False,
                     "error": str(e)
                 }).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/toggle-session-exclude"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                query = urllib.parse.parse_qs(parsed_path.query)
+                date_str = query.get("date", [None])[0]
+                excluded_str = query.get("excluded", ["false"])[0]
+                excluded = 1 if excluded_str.lower() == "true" else 0
+                if not date_str:
+                    raise Exception("Missing date parameter")
+                db.execute("UPDATE sessions SET excluded = ? WHERE ledger_date = ?", (excluded, date_str))
+                db.commit()
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
             return
             
         elif path.startswith("/api/delete-session"):
