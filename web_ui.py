@@ -1438,6 +1438,27 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         </tr>
                     </tbody>
                 </table>
+                
+                <h3 style="margin: 2.5rem 0 1rem 0; font-size: 1.1rem; color: var(--text-color); display: flex; align-items: center; gap: 0.5rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 2rem;">
+                    <span>🗑️ Recently Deleted</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">(Will be permanently purged after 30 days)</span>
+                </h3>
+                <table class="stats-table" style="font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left; padding: 10px;">Session Date</th>
+                            <th style="text-align: left; padding: 10px;">Filename Reference</th>
+                            <th style="text-align: right; padding: 10px; width: 220px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deleted-sessions-table-body">
+                        <tr>
+                            <td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                                No recently deleted sessions.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -1836,8 +1857,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
             // Render database sessions list
             const sessionsBody = document.getElementById('sessions-table-body');
             sessionsBody.innerHTML = '';
+            
+            const activeSessions = [];
+            const deletedSessions = [];
+            
             if (data.sessions && data.sessions.length > 0) {
                 data.sessions.forEach(sess => {
+                    if (sess.deleted_at === null || sess.deleted_at === undefined) {
+                        activeSessions.push(sess);
+                    } else {
+                        deletedSessions.push(sess);
+                    }
+                });
+            }
+
+            if (activeSessions.length > 0) {
+                activeSessions.forEach(sess => {
                     const tr = document.createElement('tr');
                     tr.style.cursor = 'pointer';
                     tr.onmouseover = () => { tr.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'; };
@@ -1919,15 +1954,82 @@ class WebUIHandler(BaseHTTPRequestHandler):
             } else {
                 sessionsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-muted);">No sessions in database.</td></tr>`;
             }
+
+            // Render soft-deleted sessions list
+            const deletedBody = document.getElementById('deleted-sessions-table-body');
+            deletedBody.innerHTML = '';
+            if (deletedSessions.length > 0) {
+                deletedSessions.forEach(sess => {
+                    const tr = document.createElement('tr');
+                    
+                    const dateTd = document.createElement('td');
+                    dateTd.style.padding = '12px 10px';
+                    dateTd.style.fontWeight = '600';
+                    dateTd.textContent = sess.date;
+                    
+                    const fileTd = document.createElement('td');
+                    fileTd.style.padding = '12px 10px';
+                    fileTd.style.fontFamily = 'JetBrains Mono, monospace';
+                    fileTd.style.fontSize = '0.8rem';
+                    fileTd.style.color = 'var(--text-muted)';
+                    fileTd.textContent = sess.filename || '--';
+                    
+                    const actionTd = document.createElement('td');
+                    actionTd.style.padding = '12px 10px';
+                    actionTd.style.textAlign = 'right';
+                    
+                    // Restore Button
+                    const restoreBtn = document.createElement('button');
+                    restoreBtn.style.backgroundColor = 'rgba(16, 185, 129, 0.1)';
+                    restoreBtn.style.color = '#10b981';
+                    restoreBtn.style.border = '1px solid rgba(16, 185, 129, 0.2)';
+                    restoreBtn.style.padding = '5px 10px';
+                    restoreBtn.style.fontSize = '0.75rem';
+                    restoreBtn.style.borderRadius = '6px';
+                    restoreBtn.style.cursor = 'pointer';
+                    restoreBtn.style.fontWeight = '600';
+                    restoreBtn.style.marginRight = '8px';
+                    restoreBtn.style.transition = 'all 0.2s';
+                    restoreBtn.textContent = 'Restore ↩️';
+                    restoreBtn.onmouseover = () => { restoreBtn.style.backgroundColor = 'rgba(16, 185, 129, 0.2)'; };
+                    restoreBtn.onmouseout = () => { restoreBtn.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'; };
+                    restoreBtn.onclick = () => restoreSession(sess.date);
+                    
+                    // Purge Now Button
+                    const purgeBtn = document.createElement('button');
+                    purgeBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+                    purgeBtn.style.color = 'var(--danger)';
+                    purgeBtn.style.border = '1px solid rgba(239, 68, 68, 0.2)';
+                    purgeBtn.style.padding = '5px 10px';
+                    purgeBtn.style.fontSize = '0.75rem';
+                    purgeBtn.style.borderRadius = '6px';
+                    purgeBtn.style.cursor = 'pointer';
+                    purgeBtn.style.fontWeight = '600';
+                    purgeBtn.style.margin = '0';
+                    purgeBtn.style.transition = 'all 0.2s';
+                    purgeBtn.textContent = 'Purge 💀';
+                    purgeBtn.onmouseover = () => { purgeBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'; };
+                    purgeBtn.onmouseout = () => { purgeBtn.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; };
+                    purgeBtn.onclick = () => purgeSession(sess.date);
+                    
+                    actionTd.appendChild(restoreBtn);
+                    actionTd.appendChild(purgeBtn);
+                    tr.appendChild(dateTd);
+                    tr.appendChild(fileTd);
+                    tr.appendChild(actionTd);
+                    deletedBody.appendChild(tr);
+                });
+            } else {
+                deletedBody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">No recently deleted sessions.</td></tr>`;
+            }
         }
 
         function deleteSession(date) {
-            if (confirm(`Are you sure you want to permanently delete the session on ${date} and all associated player statistics? This cannot be undone.`)) {
+            if (confirm(`Are you sure you want to delete the session on ${date}? It will be moved to the 'Recently Deleted' queue for 30 days and excluded from stats. You can restore it anytime.`)) {
                 fetch(`/api/delete-session?date=${date}`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.success) {
-                            alert(`Session ${date} deleted successfully.`);
                             loadAnalyticsData();
                         } else {
                             alert(`Failed to delete session: ${res.error}`);
@@ -1936,6 +2038,40 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     .catch(err => {
                         console.error("Error deleting session:", err);
                         alert("Error deleting session.");
+                    });
+            }
+        }
+
+        function restoreSession(date) {
+            fetch(`/api/restore-session?date=${date}`)
+                .then(res => res.json())
+                .then(res => {
+                    if (res.success) {
+                        loadAnalyticsData();
+                    } else {
+                        alert(`Failed to restore session: ${res.error}`);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error restoring session:", err);
+                    alert("Error restoring session.");
+                });
+        }
+
+        function purgeSession(date) {
+            if (confirm(`Are you sure you want to PERMANENTLY delete the session on ${date} and all associated player statistics? This action is IRREVERSIBLE and overrides the 30-day safety net.`)) {
+                fetch(`/api/purge-session?date=${date}`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.success) {
+                            loadAnalyticsData();
+                        } else {
+                            alert(`Failed to purge session: ${res.error}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error purging session:", err);
+                        alert("Error purging session.");
                     });
             }
         }

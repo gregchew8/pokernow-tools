@@ -701,21 +701,24 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 stats = db.get_player_stats(start_date, end_date)
                 history = db.get_player_history(start_date, end_date)
                 
-                sessions_cursor = db.execute("SELECT ledger_date, filename, excluded FROM sessions ORDER BY ledger_date DESC")
+                sessions_cursor = db.execute("SELECT ledger_date, filename, excluded, deleted_at FROM sessions ORDER BY ledger_date DESC")
                 sessions = []
                 for r in sessions_cursor.fetchall():
                     if db.is_postgres:
                         date_str = str(r[0])
                         filename = r[1]
                         excluded = bool(r[2])
+                        deleted_at = float(r[3]) if r[3] is not None else None
                     else:
                         date_str = str(r["ledger_date"])
                         filename = r["filename"]
                         excluded = bool(r["excluded"])
+                        deleted_at = float(r["deleted_at"]) if r["deleted_at"] is not None else None
                     sessions.append({
                         "date": date_str,
                         "filename": filename,
-                        "excluded": excluded
+                        "excluded": excluded,
+                        "deleted_at": deleted_at
                     })
                 
                 self.wfile.write(json.dumps({
@@ -723,11 +726,14 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                     "stats": stats,
                     "history": history,
                     "sessions": sessions,
-                    "db_type": "Postgres" if db.is_postgres else f"SQLite (Fallback: {db.error_msg}, DB env keys: {[k for k in os.environ.keys() if any(x in k.upper() for x in ['DB', 'DATABASE', 'PG', 'POSTGRES', 'URL', 'PORT'])].__str__()})"
+                    "db_healthy": True,
+                    "db_type": "Postgres" if db.is_postgres else "SQLite"
                 }).encode("utf-8"))
             except Exception as e:
                 self.wfile.write(json.dumps({
                     "success": False,
+                    "db_healthy": False,
+                    "db_type": "Error",
                     "error": str(e)
                 }).encode("utf-8"))
             return
@@ -764,6 +770,40 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 if not date_str:
                     raise Exception("Missing date parameter")
                 db.delete_session(date_str)
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/restore-session"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                query = urllib.parse.parse_qs(parsed_path.query)
+                date_str = query.get("date", [None])[0]
+                if not date_str:
+                    raise Exception("Missing date parameter")
+                db.restore_session(date_str)
+                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+            
+        elif path.startswith("/api/purge-session"):
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                from db_client import DBClient
+                db = DBClient()
+                query = urllib.parse.parse_qs(parsed_path.query)
+                date_str = query.get("date", [None])[0]
+                if not date_str:
+                    raise Exception("Missing date parameter")
+                db.purge_session(date_str)
                 self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
             except Exception as e:
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))

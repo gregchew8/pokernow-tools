@@ -110,7 +110,8 @@ class DBClient:
                 ledger_date TEXT PRIMARY KEY,
                 filename TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                excluded INTEGER DEFAULT 0
+                excluded INTEGER DEFAULT 0,
+                deleted_at REAL
             )
         """)
         
@@ -124,6 +125,23 @@ class DBClient:
                     self.conn.rollback()
             except Exception:
                 pass
+
+        # Run migration to add deleted_at column
+        try:
+            self.execute("ALTER TABLE sessions ADD COLUMN deleted_at REAL")
+            self.commit()
+        except Exception:
+            try:
+                if self.conn:
+                    self.conn.rollback()
+            except Exception:
+                pass
+
+        # Run auto purge
+        try:
+            self.auto_purge_deleted_sessions()
+        except Exception as e:
+            print(f"[DBClient] Auto-purge failed: {e}")
 
         # Create player ledger records table
         id_type = "SERIAL PRIMARY KEY" if self.is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
@@ -174,10 +192,45 @@ class DBClient:
 
     def delete_session(self, ledger_date):
         try:
+            import time
+            self.execute("UPDATE sessions SET deleted_at = ? WHERE ledger_date = ?", (time.time(), ledger_date))
+            self.commit()
+            return True
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+
+    def restore_session(self, ledger_date):
+        try:
+            self.execute("UPDATE sessions SET deleted_at = NULL WHERE ledger_date = ?", (ledger_date,))
+            self.commit()
+            return True
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+
+    def purge_session(self, ledger_date):
+        try:
             self.execute("DELETE FROM player_ledger_records WHERE ledger_date = ?", (ledger_date,))
             self.execute("DELETE FROM sessions WHERE ledger_date = ?", (ledger_date,))
             self.commit()
             return True
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+
+    def auto_purge_deleted_sessions(self):
+        try:
+            import time
+            thirty_days_ago = time.time() - 30 * 86400
+            cursor = self.execute("SELECT ledger_date FROM sessions WHERE deleted_at <= ?", (thirty_days_ago,))
+            dates = [r[0] if self.is_postgres else r["ledger_date"] for r in cursor.fetchall()]
+            for date in dates:
+                self.execute("DELETE FROM player_ledger_records WHERE ledger_date = ?", (date,))
+                self.execute("DELETE FROM sessions WHERE ledger_date = ?", (date,))
+            if dates:
+                self.commit()
+                print(f"[DBClient] Auto-purged {len(dates)} soft-deleted sessions older than 30 days: {dates}")
         except Exception as e:
             self.conn.rollback()
             raise e
@@ -251,7 +304,7 @@ class DBClient:
         query = """
             SELECT player_nickname, player_id, buy_in, net
             FROM player_ledger_records
-            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1)
+            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1 OR deleted_at IS NOT NULL)
         """
         params = []
         if start_date:
@@ -337,7 +390,7 @@ class DBClient:
         query = """
             SELECT player_nickname, player_id, net, ledger_date
             FROM player_ledger_records
-            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1)
+            WHERE ledger_date NOT IN (SELECT ledger_date FROM sessions WHERE excluded = 1 OR deleted_at IS NOT NULL)
         """
         params = []
         if start_date:
