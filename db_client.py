@@ -14,6 +14,7 @@ class DBClient:
         self.db_url = os.environ.get("DATABASE_URL", "").strip()
         self.is_postgres = False
         self.conn = None
+        self.error_msg = None
         
         # Determine connection type
         if self.db_url and (self.db_url.startswith("postgresql://") or self.db_url.startswith("postgres://")):
@@ -46,6 +47,7 @@ class DBClient:
                 print("[DBClient] Successfully connected to PostgreSQL database on Railway.")
                 return
             except Exception as e:
+                self.error_msg = f"Failed to connect to PostgreSQL: {e}"
                 print(f"[DBClient] Failed to connect to PostgreSQL: {e}. Falling back to SQLite.")
                 self.is_postgres = False
 

@@ -647,7 +647,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "success": True,
                     "stats": stats,
                     "history": history,
-                    "sessions": sessions
+                    "sessions": sessions,
+                    "db_type": "Postgres" if db.is_postgres else f"SQLite (Fallback: {db.error_msg})"
                 }).encode("utf-8"))
             except Exception as e:
                 self.wfile.write(json.dumps({
