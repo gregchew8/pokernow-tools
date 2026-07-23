@@ -59,21 +59,6 @@ def run(tables_to_create):
     urls = []
     total_tables = len(tables_to_create)
     
-    # 1. Open the Turnstile-bypassing Chrome window
-    print("Launching clean Google Chrome instance to evade Turnstile...")
-    cmd = [
-        chrome_path,
-        f"--user-data-dir={user_data_dir}",
-        "--password-store=basic",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "https://www.pokernow.club/start-game"
-    ]
-    
-    # Launch main process natively - NO Playwright Debugging Ports!
-    chrome_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(5.0)
-    
     for idx, table_info in enumerate(tables_to_create):
         if len(table_info) == 4:
             game_type, table_num, sb, bb = table_info
@@ -85,17 +70,18 @@ def run(tables_to_create):
         print(f" TABLE {idx+1} of {total_tables}: {game_type.upper()} ({sb}/{bb})")
         print(f"============================================================")
         
-        if idx > 0:
-            print("Opening new tab for next table...")
-            subprocess.Popen([
-                chrome_path,
-                f"--user-data-dir={user_data_dir}",
-                "--password-store=basic",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "https://www.pokernow.club/start-game"
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(3)
+        # 1. Open the Turnstile-bypassing Chrome window for this table
+        print(f"Launching clean Google Chrome window for Table {idx+1}...")
+        cmd = [
+            chrome_path,
+            f"--user-data-dir={user_data_dir}",
+            "--password-store=basic",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "https://www.pokernow.club/start-game"
+        ]
+        chrome_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(5.0)
         
         print("============================================================")
         print(f" ACTION REQUIRED FOR TABLE {idx+1} of {total_tables}:")
@@ -375,6 +361,15 @@ def run(tables_to_create):
         final_url = run_applescript('tell application "Google Chrome" to return URL of active tab of front window')
         print(f"Table configured successfully! Room URL: {final_url}")
         urls.append((table_info, final_url))
+        
+        # Terminate Chrome to close this window before starting the next table
+        print("Closing Chrome window for cleanup...")
+        chrome_proc.terminate()
+        try:
+            chrome_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            chrome_proc.kill()
+        time.sleep(2)
         
     print("\n============================================================")
     print(" ALL TABLES CREATED AND CONFIGURED!")
