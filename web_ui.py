@@ -1243,11 +1243,45 @@ class WebUIHandler(BaseHTTPRequestHandler):
             user-select: none;
             border-radius: 4px;
         }
-        .player-checkbox-item:hover {
-            background: rgba(255, 255, 255, 0.04);
+        /* Switch styles (OSX Style slide bar toggle) */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
         }
-        .player-checkbox-item input {
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
             cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .2s;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #fff;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        input:checked + .slider {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
         }
     </style>
 </head>
@@ -1805,6 +1839,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
             if (data.sessions && data.sessions.length > 0) {
                 data.sessions.forEach(sess => {
                     const tr = document.createElement('tr');
+                    tr.style.cursor = 'pointer';
+                    tr.onmouseover = () => { tr.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'; };
+                    tr.onmouseout = () => { tr.style.backgroundColor = 'transparent'; };
                     
                     const dateTd = document.createElement('td');
                     dateTd.style.padding = '12px 10px';
@@ -1846,12 +1883,31 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     includeTd.style.padding = '12px 10px';
                     includeTd.style.textAlign = 'center';
                     
+                    // Create OS X style toggle switch
+                    const switchLabel = document.createElement('label');
+                    switchLabel.className = 'switch';
+                    switchLabel.onclick = (e) => e.stopPropagation(); // Prevent tr.onclick from running when clicking label directly
+                    
                     const chk = document.createElement('input');
                     chk.type = 'checkbox';
-                    chk.style.cursor = 'pointer';
                     chk.checked = !sess.excluded;
+                    chk.onclick = (e) => e.stopPropagation(); // Prevent tr.onclick when clicking input
                     chk.onchange = () => toggleSessionExclude(sess.date, !chk.checked);
-                    includeTd.appendChild(chk);
+                    
+                    const sliderSpan = document.createElement('span');
+                    sliderSpan.className = 'slider';
+                    
+                    switchLabel.appendChild(chk);
+                    switchLabel.appendChild(sliderSpan);
+                    includeTd.appendChild(switchLabel);
+                    
+                    // Entire row click toggles
+                    tr.onclick = (e) => {
+                        if (e.target.closest('button')) return;
+                        const targetChecked = !chk.checked;
+                        chk.checked = targetChecked;
+                        toggleSessionExclude(sess.date, !targetChecked);
+                    };
                     
                     actionTd.appendChild(delBtn);
                     tr.appendChild(dateTd);
