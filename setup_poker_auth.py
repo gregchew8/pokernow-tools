@@ -135,28 +135,29 @@ def run(tables_to_create):
             if detected_url:
                 break
                 
-            if any("start-game" in u for u in all_urls):
+            creation_urls = [u for u in all_urls if "/games/" not in u]
+            print(f"[Debug Table {idx+1}] all_urls={all_urls}, creation_urls={creation_urls}", flush=True)
+            if creation_urls:
                 # Inject JS to fill Nickname (if empty) and click Create
                 js = """
                 var input = document.querySelector('input[placeholder*="Nickname"]') || document.querySelector('input[placeholder*="Name"]');
                 if (input) {
-                    if (input.value !== 'Dealer') {
-                        let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                        setter.call(input, 'Dealer');
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    } else {
-                        var buttons = document.querySelectorAll('button');
-                        for (var i = 0; i < buttons.length; i++) {
-                            var txt = buttons[i].innerText || buttons[i].textContent || '';
-                            if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
-                                buttons[i].click();
-                            }
-                        }
+                    let setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                    setter.call(input, 'Dealer');
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                var buttons = document.querySelectorAll('button');
+                for (var i = 0; i < buttons.length; i++) {
+                    var txt = buttons[i].innerText || buttons[i].textContent || '';
+                    if (txt.toLowerCase().includes('create') || txt.toLowerCase().includes('start')) {
+                        buttons[i].click();
                     }
                 }
                 """
-                inject_js(js, target_url="start-game")
+                res = inject_js(js, target_url="pokernow")
+                if res:
+                    print(f"[Debug Table {idx+1}] JS inject result: {res}", flush=True)
                 time.sleep(1)
             
 
