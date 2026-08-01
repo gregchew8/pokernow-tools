@@ -391,38 +391,88 @@ def run(tables_to_create):
     print("Configuration complete! The Chrome window is still open for you to verify.")
     
     if urls:
-        # Save the created game details to a JSON file for the settlement script
         today = datetime.datetime.now()
-        
         is_adhoc_run = "--adhoc" in sys.argv
-        
-        game_history = {
-            "date": today.strftime("%Y-%m-%d"),
-            "description": today.strftime("%m%d%y"),
-            "game_ids": [url.split("/games/")[-1] for _, url in urls],
-            "tables": [],
-            "is_adhoc": is_adhoc_run
-        }
-        for (table_info, url) in urls:
-            if len(table_info) == 4:
-                g_type, t_num, g_sb, g_bb = table_info
-            else:
-                g_type, t_num = table_info
-                g_sb, g_bb = "0.25", "0.50"
-            game_history["tables"].append({
-                "game_type": g_type, 
-                "table_num": t_num, 
-                "sb": g_sb, 
-                "bb": g_bb, 
-                "game_id": url.split("/games/")[-1]
-            })
+
+        # 1. Attempt to load existing history to prevent overwriting same-day games
+        existing_history = {}
+        if os.path.exists("last_created_games.json"):
+            try:
+                with open("last_created_games.json", "r") as f:
+                    existing_history = json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not read existing last_created_games.json: {e}")
+
+        # 2. Check if we should merge with today's existing run
+        today_str = today.strftime("%Y-%m-%d")
+        if existing_history.get("date") == today_str:
+            print("Detected existing tables created today. Merging new tables...")
+            # Append new game IDs
+            new_ids = [url.split("/games/")[-1] for _, url in urls]
+            for nid in new_ids:
+                if nid not in existing_history.get("game_ids", []):
+                    existing_history.setdefault("game_ids", []).append(nid)
             
+            # Merge table objects by game_id to avoid duplicates
+            existing_tables = {t["game_id"]: t for t in existing_history.get("tables", [])}
+            for (table_info, url) in urls:
+                gid = url.split("/games/")[-1]
+                if len(table_info) == 4:
+                    g_type, t_num, g_sb, g_bb = table_info
+                else:
+                    g_type, t_num = table_info
+                    g_sb, g_bb = "0.25", "0.50"
+                
+                existing_tables[gid] = {
+                    "game_type": g_type, 
+                    "table_num": t_num, 
+                    "sb": g_sb, 
+                    "bb": g_bb, 
+                    "game_id": gid
+                }
+            
+            existing_history["tables"] = list(existing_tables.values())
+            if not is_adhoc_run:
+                existing_history["is_adhoc"] = False
+                
+            game_history = existing_history
+        else:
+            # Fresh run for a new day
+            game_history = {
+                "date": today_str,
+                "description": today.strftime("%m%d%y"),
+                "game_ids": [url.split("/games/")[-1] for _, url in urls],
+                "tables": [],
+                "is_adhoc": is_adhoc_run
+            }
+            for (table_info, url) in urls:
+                if len(table_info) == 4:
+                    g_type, t_num, g_sb, g_bb = table_info
+                else:
+                    g_type, t_num = table_info
+                    g_sb, g_bb = "0.25", "0.50"
+                game_history["tables"].append({
+                    "game_type": g_type, 
+                    "table_num": t_num, 
+                    "sb": g_sb, 
+                    "bb": g_bb, 
+                    "game_id": url.split("/games/")[-1]
+                })
+
         try:
             with open("last_created_games.json", "w") as f:
                 json.dump(game_history, f, indent=4)
             print("Saved game details to 'last_created_games.json' for settlement automation.")
+            
+            # Save a daily history archive
+            archive_dir = "output"
+            os.makedirs(archive_dir, exist_ok=True)
+            archive_path = os.path.join(archive_dir, f"created_games_{today_str}.json")
+            with open(archive_path, "w") as f:
+                json.dump(game_history, f, indent=4)
+            print(f"Archived historical games to '{archive_path}'")
         except Exception as e:
-            print(f"Warning: Could not save last_created_games.json: {e}")
+            print(f"Warning: Could not save game files: {e}")
 
 
 if __name__ == "__main__":

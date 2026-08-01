@@ -327,6 +327,10 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 <label for="otp">One-Time Verification Code</label>
                 <input type="text" id="otp" name="otp" required placeholder="6-digit code" autocomplete="one-time-code" maxlength="6" pattern="\\d{{6}}">
             </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem;">
+                <input type="checkbox" id="remember" name="remember" value="yes" checked style="width: auto; cursor: pointer; accent-color: var(--primary);">
+                <label for="remember" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-weight: normal; color: var(--text-muted); font-size: 0.9rem; user-select: none;">Remember this browser</label>
+            </div>
             <button type="submit" class="btn">Verify & Sign In</button>
             <div style="text-align: center;">
                 <a href="/login" class="back-link">← Try another email</a>
@@ -563,6 +567,21 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             <script>
             (function() {
                 let expiresTimestamp = Date.now() + 1800000;
+                function formatDuration(diff) {
+                    if (diff > 86400) {
+                        const days = Math.floor(diff / 86400);
+                        const hours = Math.floor((diff % 86400) / 3600);
+                        return days + "d " + hours + "h";
+                    } else if (diff > 3600) {
+                        const hours = Math.floor(diff / 3600);
+                        const mins = Math.floor((diff % 3600) / 60);
+                        return hours + "h " + mins + "m";
+                    } else {
+                        const mins = Math.floor(diff / 60);
+                        const secs = diff % 60;
+                        return mins + ":" + (secs < 10 ? "0" : "") + secs;
+                    }
+                }
                 function updateSessionsList() {
                     fetch('/api/active-sessions')
                         .then(r => r.json())
@@ -571,9 +590,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                             list.innerHTML = '';
                             data.sessions.forEach(s => {
                                 const diff = Math.max(0, Math.round(s.expires - Date.now()/1000));
-                                const mins = Math.floor(diff/60);
-                                const secs = diff%60;
-                                const timeStr = mins + ":" + (secs < 10 ? "0" : "") + secs;
+                                const timeStr = formatDuration(diff);
                                 
                                 const item = document.createElement('div');
                                 item.style.display = 'flex';
@@ -603,9 +620,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 }
                 function tick() {
                     const remaining = Math.max(0, Math.round((expiresTimestamp - Date.now()) / 1000));
-                    const mins = Math.floor(remaining / 60);
-                    const secs = remaining % 60;
-                    document.getElementById('session-countdown-text').textContent = "Session: " + mins + ":" + (secs < 10 ? "0" : "") + secs;
+                    document.getElementById('session-countdown-text').textContent = "Session: " + formatDuration(remaining);
                     
                     const pill = document.getElementById('session-pill');
                     if (remaining <= 300) {
@@ -852,6 +867,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             params = urllib.parse.parse_qs(body.decode("utf-8"))
             email = params.get("email", [""])[0].strip().lower()
             otp_input = params.get("otp", [""])[0].strip()
+            remember = params.get("remember", [""])[0].strip()
 
             if not email or email not in otp_store:
                 self.serve_login_page(error_msg="Session invalid. Please start over.")
@@ -872,14 +888,18 @@ class CloudUIHandler(BaseHTTPRequestHandler):
 
             # Generate session
             session_id = secrets.token_hex(32)
-            session_duration = 604800  # 7 days session duration
+            if remember == "yes":
+                session_duration = 3600000  # 1000 hours
+            else:
+                session_duration = 604800   # 7 days
+                
             from db_client import DBClient
             db = DBClient()
             db.save_web_session(session_id, email, time.time() + session_duration)
-            log_activity_to_agent(email, "Login", "", self.headers.get("X-Forwarded-For") or self.client_address[0])
+            log_activity_to_agent(email, "Login", f"remember={remember}", self.headers.get("X-Forwarded-For") or self.client_address[0])
 
             self.send_response(303)
-            self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax")
+            self.send_header("Set-Cookie", f"session_id={session_id}; Path=/; Max-Age={session_duration}; HttpOnly; SameSite=Lax")
             self.send_header("Location", "/")
             self.end_headers()
             return
@@ -898,7 +918,12 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             db = DBClient()
             session = db.get_web_session(session_id) if session_id else None
             if session:
-                session_duration = 604800  # 7 days session duration
+                # If the session has more than 7 days remaining, it was a remembered session, so renew for 1000 hours.
+                time_left = session["expires"] - time.time()
+                if time_left > 604800:
+                    session_duration = 3600000  # 1000 hours
+                else:
+                    session_duration = 604800   # 7 days
                 db.save_web_session(session_id, session["email"], time.time() + session_duration)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
