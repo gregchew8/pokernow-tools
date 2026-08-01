@@ -2767,8 +2767,15 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <label for="settlement-desc" style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.2rem; font-weight: 600;">Settlement Description/Date:</label>
                     <input type="text" id="settlement-desc" class="input-field" placeholder="e.g. 062726" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px;">
                 </div>
+                <!-- Checklist wrapper for last run games -->
+                <div id="checklist-wrapper" style="margin-bottom: 0.75rem; display: none;">
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.4rem; font-weight: 600;">Select Tables from Last Run:</label>
+                    <div id="settlement-checklist" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; max-height: 120px; overflow-y: auto;">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
                 <div style="margin-bottom: 1rem;">
-                    <label for="settlement-games" style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.2rem; font-weight: 600;">Game URLs or IDs (space/comma separated):</label>
+                    <label for="settlement-games" style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.2rem; font-weight: 600;">Additional Game URLs or IDs (or edit list manually):</label>
                     <textarea id="settlement-games" class="input-field" placeholder="pgl_... or https://pokernow.club/games/pgl_..." style="width: 100%; box-sizing: border-box; min-height: 70px; resize: vertical; background: rgba(0,0,0,0.2); color: #fff; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;"></textarea>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
@@ -3219,15 +3226,126 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     const activeDate = document.getElementById('active-date');
                     activeContainer.innerHTML = '';
                     
+                    // Hook up manual typing sync once
+                    const textarea = document.getElementById('settlement-games');
+                    if (!window.hasSetupTextareaSync) {
+                        window.hasSetupTextareaSync = true;
+                        textarea.addEventListener('input', () => {
+                            updateCheckboxesFromTextarea();
+                        });
+                    }
+
+                    function updateTextareaFromCheckboxes() {
+                        const checkboxesList = document.getElementById('settlement-checklist');
+                        if (!checkboxesList) return;
+                        const checkedIds = [];
+                        checkboxesList.querySelectorAll('input[type="checkbox"]:checked').forEach(c => {
+                            checkedIds.push(c.value);
+                        });
+                        
+                        // Keep any custom/other IDs that the user might have manually typed in that are not in the checklist
+                        const existingIds = [];
+                        const rawInput = textarea.value.trim();
+                        if (rawInput) {
+                            const tokens = rawInput.split(/[\s,\n]+/);
+                            tokens.forEach(tok => {
+                                let clean = tok.trim();
+                                if (clean.includes("/games/")) {
+                                    const parts = clean.split("/games/");
+                                    if (parts.length > 1) {
+                                        clean = parts[1].split(/[?#]/)[0];
+                                    }
+                                }
+                                clean = clean.replace(/[^a-zA-Z0-9_-]/g, "");
+                                if (clean && clean.startsWith("pgl") && clean.length >= 15) {
+                                    existingIds.push(clean);
+                                }
+                            });
+                        }
+                        
+                        const allKnownChecklistIds = (data.last_games && data.last_games.tables) ? data.last_games.tables.map(t => t.game_id) : [];
+                        const customIds = existingIds.filter(id => !allKnownChecklistIds.includes(id));
+                        
+                        const finalIds = [...checkedIds, ...customIds];
+                        textarea.value = finalIds.join('\n');
+                    }
+
+                    function updateCheckboxesFromTextarea() {
+                        const checkboxesList = document.getElementById('settlement-checklist');
+                        if (!checkboxesList) return;
+                        const rawInput = textarea.value.trim();
+                        const parsedIds = [];
+                        if (rawInput) {
+                            const tokens = rawInput.split(/[\s,\n]+/);
+                            tokens.forEach(tok => {
+                                let clean = tok.trim();
+                                if (clean.includes("/games/")) {
+                                    const parts = clean.split("/games/");
+                                    if (parts.length > 1) {
+                                        clean = parts[1].split(/[?#]/)[0];
+                                    }
+                                }
+                                clean = clean.replace(/[^a-zA-Z0-9_-]/g, "");
+                                if (clean && clean.startsWith("pgl") && clean.length >= 15) {
+                                    parsedIds.push(clean);
+                                }
+                            });
+                        }
+                        checkboxesList.querySelectorAll('input[type="checkbox"]').forEach(chk => {
+                            chk.checked = parsedIds.includes(chk.value);
+                        });
+                    }
+                    
                     if (data.last_games && data.last_games.tables && data.last_games.tables.length > 0) {
                         activeDate.textContent = `(Game Date: ${data.last_games.date})`;
                         
-                        // Auto-populate settlement games textarea once on initial load
-                        if (!window.hasPopulatedGames) {
-                            window.hasPopulatedGames = true;
-                            const textarea = document.getElementById('settlement-games');
-                            if (!textarea.value.trim()) {
-                                textarea.value = data.last_games.tables.map(t => t.game_id).join('\n');
+                        // Auto-populate description if empty
+                        const descInput = document.getElementById('settlement-desc');
+                        if (!descInput.value.trim() && data.last_games.description) {
+                            descInput.value = data.last_games.description;
+                        }
+
+                        // Populate dynamic checklist for payout settlement
+                        const checklistWrapper = document.getElementById('checklist-wrapper');
+                        const checkboxesList = document.getElementById('settlement-checklist');
+                        if (checklistWrapper && checkboxesList) {
+                            checklistWrapper.style.display = 'block';
+                            
+                            const runKey = data.last_games.date + "_" + data.last_games.game_ids.join("-");
+                            if (window.lastChecklistRunKey !== runKey) {
+                                window.lastChecklistRunKey = runKey;
+                                checkboxesList.innerHTML = '';
+                                
+                                data.last_games.tables.forEach(t => {
+                                    const container = document.createElement('label');
+                                    container.style.display = 'flex';
+                                    container.style.alignItems = 'center';
+                                    container.style.gap = '8px';
+                                    container.style.fontSize = '0.85rem';
+                                    container.style.cursor = 'pointer';
+                                    container.style.color = '#e2e8f0';
+                                    container.style.userSelect = 'none';
+                                    
+                                    const chk = document.createElement('input');
+                                    chk.type = 'checkbox';
+                                    chk.value = t.game_id;
+                                    chk.checked = true;
+                                    chk.style.cursor = 'pointer';
+                                    
+                                    chk.addEventListener('change', () => {
+                                        updateTextareaFromCheckboxes();
+                                    });
+                                    
+                                    const stakes = (t.sb && t.bb) ? ` (${t.sb}/${t.bb})` : '';
+                                    const labelText = document.createTextNode(`${t.game_type.toUpperCase()}${stakes} - Table ${t.table_num} [${t.game_id}]`);
+                                    
+                                    container.appendChild(chk);
+                                    container.appendChild(labelText);
+                                    checkboxesList.appendChild(container);
+                                });
+                                
+                                // Set initial textarea content
+                                updateTextareaFromCheckboxes();
                             }
                         }
 
