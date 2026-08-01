@@ -35,11 +35,14 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
         - **Timestamps**: Prominently shows active run error/success timestamps directly in the header.
         - **Diagnostic History & Acknowledgment**: Lists the last 3 historical errors. You can expand their resolution steps or click **Acknowledge** to dismiss active warning glows and track acknowledgment state persistently in `data/acknowledged_errors.json`.
         - **Interactive Copyable Nicknames**: On player mapping errors, the missing nickname is displayed as a badge (`nickname 📋`) that copies the clean text to your clipboard when clicked, making it quick and easy to add to your spreadsheet.
+        - **Interactive Payout Settlement Checklist**: Lists tables generated from the last announcer run. Checking/unchecking table items automatically syncs their game IDs into the textarea. You can still type custom IDs or paste email URLs.
+        - **Same-Day Table Merging**: Re-running table setups on the same day (e.g. for ad-hoc tables) merges new tables with today's existing list in `last_created_games.json` instead of overwriting, letting them all show up together in the checklist.
         - **Smart URL Parsing**: Reconciliations accept copy-pasted email blocks (e.g. `Table 1 - NLH <https://.../games/pgl...>`), automatically ignoring text prefixes and stripping trailing characters like `>` before download.
       - **Active vs. Stale Log Tracking**: Extracts execution and error timestamps to label error boxes with status badges (`[ACTIVE ERROR]`, `[STALE / RESOLVED]`, or `[SUCCESS]`). Stale/old error panels are dimmed with hover-reveal styling to prevent confusion.
       - **Clipboard Shortcuts**: Copy buttons next to each console log panel allow for quick sharing/debugging of stack traces.
       - **Static Settlement Inputs**: Settlement UI has been redesigned to use dark-themed static input fields instead of annoying popup browser prompts, allowing seamless copy/pasting from external tabs.
       - **Decoupled Ad-Hoc Sessions & Kill Switch**: Allows you to run custom ad-hoc tables independent of the main schedule. Alternatively, flip the new **Kill Switch** toggle on the Schedule Editor to cleanly skip tonight's scheduled automatic table creation.
+      - **Table Reordering**: Up/Down arrows next to each table in the Main Schedule Editor to easily adjust the order of games in your daily schedule list.
       - **Player Performance Analytics & Database Viewer** (`/analytics`)
         - Displays a premium dark-themed performance dashboard showing cumulative earnings trajectories, win rates, avg buy-ins, total buy-ins, profit per session, and unique games played.
         - **Quick Date Filters**: Quick links for `Last Month | Last 3 Months | Last Year | Last 2 Years | All Time` automatically calculate date ranges and dynamically redraw charts and graphs.
@@ -51,7 +54,7 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
         - Retains unlock status securely using browser `sessionStorage` and persistent database tokens.
         - Enabled by setting the `ADMIN_PIN` variable in your `.env` or Railway panel.
         - Any elements containing the `admin-only` CSS class will automatically hide/lock when the PIN is enabled.
-      - **Database-backed Persistent Sessions**: Web sessions are stored in the PostgreSQL database with a **7-day lifetime** instead of in-memory lists, preserving your login state across Railway redeploys or browser restarts.
+      - **Database-backed Persistent Sessions**: Web sessions are stored in the PostgreSQL database instead of in-memory lists, preserving your login state across Railway redeploys or browser restarts.
     - **Historical Group Settlements Importer** (`import_text_settlements.py` & `scratch/import_mon_settlement.py`)
       - Scrapes archived Google Groups payout announcements or parses manual text copies, computes individual player net profits, verifies zero-sums, and automatically backfills/inserts historical session records directly to PostgreSQL.
     - **Replication Script** (`sync_to_drive.sh`)
@@ -87,6 +90,7 @@ Register the launchd agents for automated execution and remote-control UI:
 ```bash
 python3 setup_local_scheduler.py
 ```
+- **Reliability & SSD Execution**: The scheduler registers launchd files using the local SSD folder (`/Users/gregchew/pokernow`) as the active directory to ensure services launch reliably at boot and do not crash due to Google Drive virtual folder mounting delays.
 - **Web UI Control Panel**: Starts immediately and runs in the background on port `8080` (access via `http://<tailscale-ip>:8080` when on Tailscale).
 - **Game Announcements**: Triggers automatically at **5:00 PM** (Mon, Wed, Fri, Sat).
 - **Settlements**: Runs automatically at **8:00 AM** (Tue, Thu, Sat, Sun).
@@ -132,7 +136,7 @@ graph TD
 #### 1. Railway Cloud UI (`cloud_ui.py`)
 - Runs on **Railway** (`https://poker.gchew.com`) inside a secure, zero-dependency Docker container.
 - Serves as the **secure gatekeeper** for the control panel (`/`) and player performance dashboard (`/analytics`).
-- Enforces an automated **30-minute session limit** with a floating visual HUD countdown timer in the bottom-right corner.
+- **"Remember this browser" Session Option**: When checking the "Remember this browser" box on login, the session is extended to **1,000 hours** (7 days if unchecked). The floating pill countdown formats this as `Xd Yh` for easy visibility.
 - **Session Authentication (OTP)**: Validates user identity and coordinates with the Mac Mini to send email OTP codes.
 
 #### 2. Mac Mini Local Agent (`local_agent.py` - Port 8081)
