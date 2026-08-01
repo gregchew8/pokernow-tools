@@ -2577,6 +2577,22 @@ class WebUIHandler(BaseHTTPRequestHandler):
             background-color: rgba(239, 68, 68, 0.1);
         }
 
+        .btn-reorder {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 0.2rem 0.35rem;
+            border-radius: 4px;
+            transition: color 0.2s, background-color 0.2s;
+        }
+
+        .btn-reorder:hover {
+            color: var(--primary-hover) !important;
+            background-color: rgba(99, 102, 241, 0.1) !important;
+        }
+
         .btn-add-game {
             display: block;
             width: 100%;
@@ -3644,6 +3660,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 .catch(err => console.error("Error loading schedule:", err));
         }
 
+        function moveGameRow(button, direction) {
+            const row = button.closest('.game-row');
+            if (!row) return;
+            const parent = row.parentNode;
+            if (!parent) return;
+            
+            if (direction === -1) {
+                const prev = row.previousElementSibling;
+                if (prev) {
+                    parent.insertBefore(row, prev);
+                }
+            } else if (direction === 1) {
+                const next = row.nextElementSibling;
+                if (next) {
+                    parent.insertBefore(next, row);
+                }
+            }
+        }
+
         function addScheduleGame(day, type="nlh", sb="0.25", bb="0.50") {
             const gamesDiv = document.getElementById(`games-${day}`);
             if (!gamesDiv) return;
@@ -3660,6 +3695,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <input type="text" class="input-small input-stakes game-sb" placeholder="SB" value="${sb}">
                 <span style="font-size:0.8rem;color:var(--text-muted);"> / </span>
                 <input type="text" class="input-small input-stakes game-bb" placeholder="BB" value="${bb}">
+                <button class="btn-reorder" onclick="moveGameRow(this, -1)" title="Move table up">▲</button>
+                <button class="btn-reorder" onclick="moveGameRow(this, 1)" title="Move table down">▼</button>
                 <button class="btn-icon" onclick="this.parentElement.remove(); if(!document.getElementById('games-${day}').children.length) document.getElementById('times-${day}').style.display='none';" title="Remove game">✕</button>
             `;
             gamesDiv.appendChild(row);
