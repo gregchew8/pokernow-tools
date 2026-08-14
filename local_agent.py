@@ -743,21 +743,25 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
             cmd = [sys.executable, "announce_games.py"]
             test_flag = False
             draft_flag = False
+            day_val = None
             if content_length > 0:
                 try:
                     post_data = self.rfile.read(content_length)
                     payload = json.loads(post_data.decode("utf-8"))
                     test_flag = payload.get("test", False)
                     draft_flag = payload.get("draft", False)
+                    day_val = payload.get("day")
                     if test_flag:
                         cmd += ["--test"]
                     if draft_flag:
                         cmd += ["--draft"]
+                    if day_val:
+                        cmd += ["--day", str(day_val)]
                 except Exception as e:
                     print(f"[Agent] Error parsing run-announcer payload: {e}")
             success = run_script_in_background("announcer", cmd)
             if success and admin_email:
-                log_admin_activity(admin_email, "Ran Announcer", f"test={test_flag}, draft={draft_flag}", admin_ip)
+                log_admin_activity(admin_email, "Ran Announcer", f"test={test_flag}, draft={draft_flag}, day={day_val}", admin_ip)
             self.send_response(200 if success else 409)
             self.send_header("Content-type", "application/json")
             self.end_headers()
@@ -1007,6 +1011,24 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                     print(f"[Agent] Error logging activity: {e}")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            return
+        elif path == "/api/restart":
+            def _restart_web_ui():
+                time.sleep(0.5)
+                print("[Agent] Restarting com.pokernow.web_ui launchd service...")
+                plist_path = os.path.expanduser("~/Library/LaunchAgents/com.pokernow.web_ui.plist")
+                subprocess.run(["launchctl", "unload", plist_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["launchctl", "load", plist_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            t = threading.Thread(target=_restart_web_ui, daemon=True)
+            t.start()
+            
+            if admin_email:
+                log_admin_activity(admin_email, "Restarted Web UI", "", admin_ip)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
             return
