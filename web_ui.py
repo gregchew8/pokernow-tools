@@ -692,6 +692,8 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         cmd += ["--test"]
                     if payload.get("draft", False):
                         cmd += ["--draft"]
+                    if payload.get("day"):
+                        cmd += ["--day", str(payload["day"])]
                 except Exception as e:
                     print(f"[WebUI] Error parsing run-announcer payload: {e}")
             success = run_script_in_background("announcer", cmd)
@@ -923,6 +925,24 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/restart":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+            
+            def _perform_restart():
+                time.sleep(0.5)
+                print("[WebUI] Restarting server process via execv...")
+                try:
+                    self.server.server_close()
+                except Exception:
+                    pass
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            
+            t = threading.Thread(target=_perform_restart, daemon=True)
+            t.start()
+            return
         else:
             self.send_error(404, "Not Found")
 
@@ -2700,10 +2720,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
 </head>
 <body>
     <div class="container">
-        <header>
+        <header style="position: relative;">
             <h1>Poker Now Control Panel</h1>
             <p class="subtitle">Tailscale Secure Remote Management</p>
             <div id="server-timestamp" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; color: #10b981; margin-top: 0.75rem; text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); font-weight: bold;">Loading system time...</div>
+            <button id="btn-restart-server" class="btn" style="position: absolute; right: 0; top: 1.25rem; width: auto; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.8rem; padding: 0.4rem 0.8rem; margin: 0; cursor: pointer; border-radius: 4px; transition: all 0.2s;" onclick="restartServer()">Restart Server</button>
         </header>
 
         <div id="skip-schedule-banner" class="banner banner-warning" style="display: none;">
@@ -2762,9 +2783,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     <input type="checkbox" id="chk-announcer-test" style="cursor: pointer;">
                     <label for="chk-announcer-test" style="cursor: pointer;" title="Simulates a run in memory with dummy data, skipping browser table creation, email, and discord notifications.">Run in TEST mode (Simulated run only, no real tables or notifications)</label>
                 </div>
-                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
                     <input type="checkbox" id="chk-announcer-draft" style="cursor: pointer;">
                     <label for="chk-announcer-draft" style="cursor: pointer;">Draft email only (requires approval)</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                    <label for="sel-announcer-day" style="font-weight: 600;">Schedule Day:</label>
+                    <select id="sel-announcer-day" style="background: rgba(0,0,0,0.25); color: #fff; border: 1px solid var(--border-color); padding: 0.3rem 0.5rem; border-radius: 4px; cursor: pointer; outline: none;">
+                        <option value="">Detect Automatically (Today)</option>
+                        <option value="tomorrow">Tomorrow's Schedule</option>
+                        <option value="monday">Monday</option>
+                        <option value="wednesday">Wednesday</option>
+                        <option value="friday">Friday</option>
+                        <option value="saturday">Saturday</option>
+                    </select>
                 </div>
                 <div style="display: flex; gap: 0.5rem; width: 100%;">
                     <button id="btn-announcer" class="btn" style="flex: 1;" onclick="triggerTask('announcer')">Start Table Setup</button>
@@ -3420,6 +3452,39 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 .catch(err => console.error("Error updating dashboard:", err));
         }
 
+        function restartServer() {
+            if (!confirm("Are you sure you want to restart the Control Panel server process?")) {
+                return;
+            }
+            const btn = document.getElementById('btn-restart-server');
+            btn.disabled = true;
+            btn.textContent = 'Restarting...';
+            
+            fetch('/api/restart', {
+                method: 'POST'
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert("Restart command sent. The page will reload automatically in 3 seconds.");
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    alert("Failed to send restart command.");
+                    btn.disabled = false;
+                    btn.textContent = 'Restart Server';
+                }
+            })
+            .catch(err => {
+                // Fetch request will likely fail/abort because the server killed itself to restart.
+                // We treat this as success and reload.
+                alert("Server is restarting. The page will reload automatically in 3 seconds.");
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            });
+        }
+
         function triggerTask(taskName) {
             if (taskName === 'settlement') {
                 const desc = document.getElementById('settlement-desc').value.trim();
@@ -3498,10 +3563,11 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
             const isDraft = document.getElementById('chk-announcer-draft').checked;
             const isTest = document.getElementById('chk-announcer-test').checked;
+            const dayVal = document.getElementById('sel-announcer-day').value;
             fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ draft: isDraft, test: isTest })
+                body: JSON.stringify({ draft: isDraft, test: isTest, day: dayVal })
             })
                 .then(res => {
                     if (res.ok) {

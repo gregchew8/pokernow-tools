@@ -115,6 +115,40 @@ def main():
     is_draft = "--draft" in args
     args = [a for a in args if a not in ("--test", "--draft")]
     
+    target_day = None
+    if "--day" in args:
+        try:
+            idx = args.index("--day")
+            target_day = args[idx + 1].lower()
+            args.pop(idx + 1)
+            args.pop(idx)
+        except IndexError:
+            print("Error: --day requires a value.")
+            sys.exit(1)
+
+    # Determine local current time in PST/PDT (UTC-7)
+    local_now = datetime.datetime.utcnow() - datetime.timedelta(hours=7)
+    target_date = local_now
+    
+    if target_day:
+        if target_day == "tomorrow":
+            target_date = local_now + datetime.timedelta(days=1)
+            day_name = target_date.strftime("%A").lower()
+        else:
+            days_of_week = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            if target_day in days_of_week:
+                current_weekday = local_now.weekday()
+                target_weekday = days_of_week.index(target_day)
+                days_ahead = target_weekday - current_weekday
+                if days_ahead < 0:
+                    days_ahead += 7
+                target_date = local_now + datetime.timedelta(days=days_ahead)
+                day_name = target_day
+            else:
+                print(f"Error: Invalid day name '{target_day}'. Must be a weekday or 'tomorrow'.")
+                sys.exit(1)
+    else:
+        day_name = local_now.strftime("%A").lower()
 
     # Handle test mode: simulate dummy game creation
     if is_test:
@@ -128,7 +162,7 @@ def main():
             bb = tbl["bb"]
             dummy_url = f"https://www.pokernow.com/games/test_{idx}"
             dummy_urls.append((game_type, dummy_url))
-        today = datetime.datetime.now()
+        today = target_date
         game_history = {
             "date": today.strftime("%Y-%m-%d"),
             "description": today.strftime("%m%d%y"),
@@ -149,12 +183,9 @@ def main():
         print("Test mode: dummy game data written to 'last_created_games.json'.")
         sys.exit(0)
 
-    # If no arguments are provided, determine the current day and create tables based on schedule.json
+    # If no arguments are provided, determine the target day and create tables based on schedule.json
     if not args:
-        # Determine local current time in PST/PDT (UTC-7)
-        local_now = datetime.datetime.utcnow() - datetime.timedelta(hours=7)
-        day_name = local_now.strftime("%A").lower()
-        print(f"No arguments provided. Detecting game night day of week: {day_name.capitalize()}")
+        print(f"Detecting game night day of week: {day_name.capitalize()}")
         
         schedule_file = "schedule.json"
         if os.path.exists(schedule_file):
@@ -227,15 +258,20 @@ def main():
     game_history = json.loads(game_data)
 
     tables = game_history.get("tables", [])
-    today = datetime.datetime.now()
-    day = today.day
-    month_abbr = today.strftime("%b")
+    day = target_date.day
+    month_abbr = target_date.strftime("%b")
     suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    subject = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
+    if target_date.date() == local_now.date():
+        subject = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
+        heading_text = "Here are the table links for tonight's games:"
+    else:
+        day_of_week_cap = target_date.strftime("%A")
+        subject = f"Cash Game {day_of_week_cap} ({month_abbr} {day}{suffix}, 7PM)"
+        heading_text = f"Here are the table links for {day_of_week_cap}'s games:"
     
     # Construct Email/Discord content
-    text_lines = [subject, "Here are the table links for tonight's games:", ""]
-    html_lines = [f"<h2>{subject}</h2>", "<p>Here are the table links for tonight's games:</p><ul>"]
+    text_lines = [subject, heading_text, ""]
+    html_lines = [f"<h2>{subject}</h2>", f"<p>{heading_text}</p><ul>"]
     
     for t in tables:
         game_type = t.get("game_type", "").upper()
