@@ -261,13 +261,8 @@ def main():
     day = target_date.day
     month_abbr = target_date.strftime("%b")
     suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    if target_date.date() == local_now.date():
-        subject = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
-        heading_text = "Here are the table links for tonight's games:"
-    else:
-        day_of_week_cap = target_date.strftime("%A")
-        subject = f"Cash Game {day_of_week_cap} ({month_abbr} {day}{suffix}, 7PM)"
-        heading_text = f"Here are the table links for {day_of_week_cap}'s games:"
+    subject = f"Cash Game Tonight ({month_abbr} {day}{suffix}, 7PM)"
+    heading_text = "Here are the table links for tonight's games:"
     
     # Construct Email/Discord content
     text_lines = [subject, heading_text, ""]
