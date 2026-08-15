@@ -42,6 +42,7 @@ GAME_NIGHT_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
     <array>
         <string>{python_path}</string>
         <string>{script_path}</string>
+        <string>--scheduled</string>
     </array>
     <key>WorkingDirectory</key>
     <string>{working_dir}</string>

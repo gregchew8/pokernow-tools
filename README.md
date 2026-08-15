@@ -26,6 +26,7 @@ All active automation runs locally out of your SSD folder (e.g. `~/pokernow`), a
    - Automatically runs table setups based on the day's config in `schedule.json`.
    - Sends rich email announcements to Google Groups.
    - Creates/updates game entries dynamically in Google Calendar.
+   - **Early Setup Safeguard**: Automatically detects if table setup has already run for today (via `last_created_games.json`). Regularly scheduled runs will skip automatically, interactive terminal runs will prompt before re-running, and manual Web UI triggers will warning/proceed.
 4. **Auto Settlement Engine** (`auto_settle.py` & `pokernow_settlement.py`)
    - Automatically runs morning calculations, downloads cashout CSVs, optimizes transactions, generates HTML reports, and emails payouts.
       - **Remote Web UI Control Panel** (`web_ui.py`)

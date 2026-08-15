@@ -113,7 +113,9 @@ def main():
     
     is_test = "--test" in args
     is_draft = "--draft" in args
-    args = [a for a in args if a not in ("--test", "--draft")]
+    is_scheduled = "--scheduled" in args
+    is_force = "--force" in args
+    args = [a for a in args if a not in ("--test", "--draft", "--scheduled", "--force")]
     
     target_day = None
     if "--day" in args:
@@ -149,6 +151,27 @@ def main():
                 sys.exit(1)
     else:
         day_name = local_now.strftime("%A").lower()
+
+    # Check if table setup has already run for today/target_date
+    if not is_force:
+        target_date_str = target_date.strftime("%Y-%m-%d")
+        if os.path.exists("last_created_games.json"):
+            try:
+                with open("last_created_games.json", "r") as f:
+                    hist = json.load(f)
+                if hist.get("date") == target_date_str:
+                    if is_scheduled:
+                        print(f"Table setup for {target_date_str} has already run (found in last_created_games.json). Skipping scheduled run.")
+                        sys.exit(0)
+                    elif sys.stdin.isatty():
+                        response = input(f"Table setup for {target_date_str} has already run. Run it again? [y/N]: ").strip().lower()
+                        if response not in ("y", "yes"):
+                            print("Skipping table setup.")
+                            sys.exit(0)
+                    else:
+                        print(f"Warning: Table setup for {target_date_str} has already run, but proceeding as this is a manual non-interactive invocation.")
+            except Exception as e:
+                print(f"Error checking last_created_games.json: {e}")
 
     # Handle test mode: simulate dummy game creation
     if is_test:
