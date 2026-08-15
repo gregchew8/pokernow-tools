@@ -2165,9 +2165,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
         try:
             mtime = os.path.getmtime(__file__)
-            deploy_dt = datetime.datetime.fromtimestamp(mtime)
-            deploy_str = deploy_dt.strftime("%Y-%m-%d %H:%M:%S")
-            version_str = f"v{deploy_dt.strftime('%Y.%m.%d.%H%M')}"
+            deploy_dt_utc = datetime.datetime.fromtimestamp(mtime, datetime.timezone.utc)
+            try:
+                import zoneinfo
+                la_tz = zoneinfo.ZoneInfo("America/Los_Angeles")
+                deploy_dt_la = deploy_dt_utc.astimezone(la_tz)
+                timezone_suffix = " PDT" if deploy_dt_la.dst() else " PST"
+                deploy_str = deploy_dt_la.strftime("%Y-%m-%d %H:%M:%S") + timezone_suffix
+            except Exception:
+                deploy_str = deploy_dt_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+            version_str = f"v{deploy_dt_utc.strftime('%Y.%m.%d.%H%M')}"
         except Exception:
             deploy_str = "Unknown"
             version_str = "vUnknown"
