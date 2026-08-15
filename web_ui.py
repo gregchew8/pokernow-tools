@@ -2157,10 +2157,20 @@ class WebUIHandler(BaseHTTPRequestHandler):
     def get_html_dashboard(self):
         import os
         import hashlib
+        import datetime
         admin_pin = os.getenv("ADMIN_PIN", "").strip()
         pin_hash = ""
         if admin_pin:
             pin_hash = hashlib.sha256(admin_pin.encode("utf-8")).hexdigest()
+
+        try:
+            mtime = os.path.getmtime(__file__)
+            deploy_dt = datetime.datetime.fromtimestamp(mtime)
+            deploy_str = deploy_dt.strftime("%Y-%m-%d %H:%M:%S")
+            version_str = f"v{deploy_dt.strftime('%Y.%m.%d.%H%M')}"
+        except Exception:
+            deploy_str = "Unknown"
+            version_str = "vUnknown"
             
         html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -2723,6 +2733,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
         <header style="position: relative;">
             <h1>Poker Now Control Panel</h1>
             <p class="subtitle">Tailscale Secure Remote Management</p>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: center; gap: 1rem;">
+                <span>Deployed: <strong style="color: var(--text-color);">{{DEPLOY_STR}}</strong></span>
+                <span>Version: <strong style="font-family: 'JetBrains Mono', monospace; color: #a5b4fc;">{{VERSION_STR}}</strong></span>
+            </div>
             <div id="server-timestamp" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; color: #10b981; margin-top: 0.75rem; text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); font-weight: bold;">Loading system time...</div>
             <button id="btn-restart-server" class="btn" style="position: absolute; right: 0; top: 1.25rem; width: auto; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.8rem; padding: 0.4rem 0.8rem; margin: 0; cursor: pointer; border-radius: 4px; transition: all 0.2s;" onclick="restartServer()">Restart Server</button>
         </header>
@@ -4140,7 +4154,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
 </body>
 </html>
 """
-        return html.replace("{{ADMIN_PIN_HASH}}", pin_hash)
+        return html.replace("{{ADMIN_PIN_HASH}}", pin_hash).replace("{{DEPLOY_STR}}", deploy_str).replace("{{VERSION_STR}}", version_str)
 
 def main():
     server_address = ("", PORT)
