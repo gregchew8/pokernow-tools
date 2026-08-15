@@ -280,6 +280,32 @@ def main():
     print(game_data)
     game_history = json.loads(game_data)
 
+    # Override the date and description to be the intended target date (especially useful if run early)
+    original_date = game_history.get("date")
+    target_date_str = target_date.strftime("%Y-%m-%d")
+    game_history["date"] = target_date_str
+    game_history["description"] = target_date.strftime("%m%d%y")
+
+    # Write back to last_created_games.json
+    try:
+        with open("last_created_games.json", "w") as f:
+            json.dump(game_history, f, indent=4)
+
+        # Save a daily history archive for the target date
+        archive_dir = "output"
+        os.makedirs(archive_dir, exist_ok=True)
+        archive_path = os.path.join(archive_dir, f"created_games_{target_date_str}.json")
+        with open(archive_path, "w") as f:
+            json.dump(game_history, f, indent=4)
+
+        # Remove the old archive file if it was created under the wrong (creation) date
+        if original_date and original_date != target_date_str:
+            old_archive_path = os.path.join(archive_dir, f"created_games_{original_date}.json")
+            if os.path.exists(old_archive_path):
+                os.remove(old_archive_path)
+    except Exception as e:
+        print(f"Warning: Could not update last_created_games.json with target date: {e}")
+
     tables = game_history.get("tables", [])
     day = target_date.day
     month_abbr = target_date.strftime("%b")
