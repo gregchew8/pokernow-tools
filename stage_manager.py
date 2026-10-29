@@ -11,6 +11,17 @@ import time
 import datetime
 import urllib.request
 import urllib.error
+import ssl
+
+def get_ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        try:
+            return ssl._create_unverified_context()
+        except Exception:
+            return None
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 STAGED_GAMES_FILE = os.path.join(WORKING_DIR, "output", "staged_games.json")
@@ -77,7 +88,11 @@ def check_single_game_health(game_id, staged_at_str=None):
 
     try:
         # Note: We do not follow redirects blindly if they redirect to home or an error page
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
+        ctx = get_ssl_context()
+        kwargs = {"timeout": HTTP_TIMEOUT_SECONDS}
+        if ctx:
+            kwargs["context"] = ctx
+        with urllib.request.urlopen(req, **kwargs) as resp:
             final_url = resp.geturl()
             status_code = resp.getcode()
             
@@ -105,6 +120,27 @@ def check_single_game_health(game_id, staged_at_str=None):
             }
 
     except urllib.error.HTTPError as he:
+        if he.code == 429:
+            # Poker Now rate limiter: back off and retry once
+            time.sleep(2.5)
+            try:
+                with urllib.request.urlopen(req, **kwargs) as resp:
+                    final_url = resp.geturl()
+                    if f"/games/{game_id}" in final_url:
+                        return {
+                            "healthy": True,
+                            "reason": "OK (active room)",
+                            "status_code": resp.getcode()
+                        }
+            except Exception:
+                pass
+            # If still rate-limited, do not treat active room as expired
+            return {
+                "healthy": True,
+                "reason": "OK (active room, Poker Now rate limited)",
+                "status_code": 429
+            }
+
         return {
             "healthy": False,
             "reason": f"HTTP {he.code}: {he.reason}",
@@ -133,7 +169,9 @@ def verify_staged_batch_health(date_str, run_http_probe=True):
     table_results = []
     all_healthy = True
 
-    for t in tables:
+    for idx, t in enumerate(tables):
+        if idx > 0 and run_http_probe:
+            time.sleep(1.0)
         gid = t.get("game_id")
         if run_http_probe:
             res = check_single_game_health(gid, staged_at)

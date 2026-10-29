@@ -6,6 +6,52 @@ import subprocess
 GAME_NIGHTS_LABEL = "com.pokernow.game_nights"
 NEXT_MORNING_LABEL = "com.pokernow.next_morning"
 WEB_UI_LABEL = "com.pokernow.web_ui"
+VERIFY_STAGED_LABEL = "com.pokernow.verify_staged"
+
+VERIFY_STAGED_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python_path}</string>
+        <string>{script_path}</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>{working_dir}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- Morning health verification (10:00 AM) -->
+        <dict>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <!-- Afternoon health verification (3:30 PM, before 5:00 PM announcer) -->
+        <dict>
+            <key>Hour</key>
+            <integer>15</integer>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>{working_dir}/output/verify_staged_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{working_dir}/output/verify_staged_stderr.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
 
 WEB_UI_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -182,6 +228,7 @@ def main():
     game_nights_path = os.path.join(launch_agents_dir, f"{GAME_NIGHTS_LABEL}.plist")
     next_morning_path = os.path.join(launch_agents_dir, f"{NEXT_MORNING_LABEL}.plist")
     web_ui_path = os.path.join(launch_agents_dir, f"{WEB_UI_LABEL}.plist")
+    verify_staged_path = os.path.join(launch_agents_dir, f"{VERIFY_STAGED_LABEL}.plist")
 
     # Format the plists
     game_nights_content = GAME_NIGHT_PLIST.format(
@@ -202,6 +249,13 @@ def main():
         label=WEB_UI_LABEL,
         python_path=python_path,
         script_path=os.path.join(working_dir, "local_agent.py"),
+        working_dir=working_dir
+    )
+
+    verify_staged_content = VERIFY_STAGED_PLIST.format(
+        label=VERIFY_STAGED_LABEL,
+        python_path=python_path,
+        script_path=os.path.join(working_dir, "verify_staged_health.py"),
         working_dir=working_dir
     )
 
@@ -254,10 +308,17 @@ def main():
     with open(web_ui_path, 'wb') as f:
         plistlib.dump(web_pl, f)
     print(f"Created/Updated: {web_ui_path}")
+
+    # For verify_staged, dump with its default intervals (10:00 AM & 3:30 PM)
+    verify_pl = plistlib.loads(verify_staged_content.encode('utf-8'))
+    with open(verify_staged_path, 'wb') as f:
+        plistlib.dump(verify_pl, f)
+    print(f"Created/Updated: {verify_staged_path}")
     
     agents_list = [
         (GAME_NIGHTS_LABEL, game_nights_path),
-        (NEXT_MORNING_LABEL, next_morning_path)
+        (NEXT_MORNING_LABEL, next_morning_path),
+        (VERIFY_STAGED_LABEL, verify_staged_path)
     ]
     if "--skip-web-ui" not in sys.argv:
         agents_list.append((WEB_UI_LABEL, web_ui_path))
