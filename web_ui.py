@@ -3936,6 +3936,32 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         sBadge.textContent = day.status.toUpperCase();
                         titleWrap.appendChild(sBadge);
 
+                        // Verified badge w/ date verified
+                        const vBadge = document.createElement('span');
+                        vBadge.style.fontSize = '0.72rem';
+                        vBadge.style.padding = '0.2rem 0.5rem';
+                        vBadge.style.borderRadius = '12px';
+                        vBadge.style.fontWeight = '600';
+                        if (day.is_verified) {
+                            if (day.all_healthy) {
+                                vBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+                                vBadge.style.color = '#34d399';
+                                vBadge.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                                vBadge.textContent = `🛡️ Verified: ${day.verified_at}`;
+                            } else {
+                                vBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+                                vBadge.style.color = '#fca5a5';
+                                vBadge.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                                vBadge.textContent = `⚠️ Issue Detected (${day.verified_at})`;
+                            }
+                        } else {
+                            vBadge.style.background = 'rgba(148, 163, 184, 0.1)';
+                            vBadge.style.color = 'var(--text-muted)';
+                            vBadge.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+                            vBadge.textContent = '🛡️ Unverified';
+                        }
+                        titleWrap.appendChild(vBadge);
+
                         header.appendChild(titleWrap);
 
                         // Action buttons: Regenerate & Purge
@@ -3990,7 +4016,25 @@ class WebUIHandler(BaseHTTPRequestHandler):
                             pill.style.padding = '0.15rem 0.45rem';
                             pill.style.color = '#cbd5e1';
                             pill.style.textDecoration = 'none';
-                            pill.textContent = `${t.game_type.toUpperCase()} Table ${t.table_num} (${t.sb}/${t.bb})`;
+
+                            let checkIcon = '';
+                            if (day.last_health_check && Array.isArray(day.last_health_check.results)) {
+                                const tRes = day.last_health_check.results.find(r => r.game_id === t.game_id);
+                                if (tRes) {
+                                    if (tRes.healthy) {
+                                        checkIcon = '✓ ';
+                                        pill.style.border = '1px solid rgba(16, 185, 129, 0.35)';
+                                        pill.title = 'Active & Healthy (Verified)';
+                                    } else {
+                                        checkIcon = '⚠️ ';
+                                        pill.style.border = '1px solid rgba(239, 68, 68, 0.6)';
+                                        pill.style.color = '#fca5a5';
+                                        pill.title = tRes.reason || 'Issue detected';
+                                    }
+                                }
+                            }
+
+                            pill.textContent = `${checkIcon}${t.game_type.toUpperCase()} Table ${t.table_num} (${t.sb}/${t.bb})`;
                             tblList.appendChild(pill);
                         });
                         row.appendChild(tblList);

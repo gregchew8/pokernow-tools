@@ -233,6 +233,19 @@ def get_staged_queue_summary():
         else:
             health_badge = "fresh"
 
+        last_check = entry.get("last_health_check")
+        verified_at = None
+        is_verified = False
+        all_healthy = True
+        if last_check and isinstance(last_check, dict) and last_check.get("checked_at"):
+            is_verified = True
+            all_healthy = bool(last_check.get("all_healthy", True))
+            try:
+                dt = datetime.datetime.fromisoformat(last_check["checked_at"])
+                verified_at = dt.strftime("%b %d, %I:%M %p")
+            except Exception:
+                verified_at = str(last_check["checked_at"])[:16].replace("T", " ")
+
         summary.append({
             "date": date_str,
             "day": entry.get("day", ""),
@@ -243,7 +256,10 @@ def get_staged_queue_summary():
             "age_days": round(age_days, 1),
             "age_hours": round(age_hours, 1),
             "health_badge": health_badge,
-            "last_health_check": entry.get("last_health_check")
+            "last_health_check": last_check,
+            "verified_at": verified_at,
+            "is_verified": is_verified,
+            "all_healthy": all_healthy
         })
 
     return summary
