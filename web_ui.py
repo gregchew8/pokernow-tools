@@ -3936,29 +3936,33 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         sBadge.textContent = day.status.toUpperCase();
                         titleWrap.appendChild(sBadge);
 
-                        // Verified badge w/ date verified
+                        // Verified badge w/ date verified on mouseover
                         const vBadge = document.createElement('span');
                         vBadge.style.fontSize = '0.72rem';
                         vBadge.style.padding = '0.2rem 0.5rem';
                         vBadge.style.borderRadius = '12px';
                         vBadge.style.fontWeight = '600';
+                        vBadge.style.cursor = 'help';
                         if (day.is_verified) {
                             if (day.all_healthy) {
                                 vBadge.style.background = 'rgba(16, 185, 129, 0.15)';
                                 vBadge.style.color = '#34d399';
                                 vBadge.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-                                vBadge.textContent = `🛡️ Verified: ${day.verified_at}`;
+                                vBadge.textContent = '🛡️ Verified';
+                                vBadge.title = `Last verified: ${day.verified_at} • All tables active & responsive on Poker Now`;
                             } else {
                                 vBadge.style.background = 'rgba(239, 68, 68, 0.15)';
                                 vBadge.style.color = '#fca5a5';
                                 vBadge.style.border = '1px solid rgba(239, 68, 68, 0.3)';
-                                vBadge.textContent = `⚠️ Issue Detected (${day.verified_at})`;
+                                vBadge.textContent = '⚠️ Issue Detected';
+                                vBadge.title = `Verified: ${day.verified_at} • One or more tables failed health check`;
                             }
                         } else {
                             vBadge.style.background = 'rgba(148, 163, 184, 0.1)';
                             vBadge.style.color = 'var(--text-muted)';
                             vBadge.style.border = '1px solid rgba(255, 255, 255, 0.08)';
                             vBadge.textContent = '🛡️ Unverified';
+                            vBadge.title = 'This staged session has not yet been probed by the health checker';
                         }
                         titleWrap.appendChild(vBadge);
 
@@ -4024,14 +4028,16 @@ class WebUIHandler(BaseHTTPRequestHandler):
                                     if (tRes.healthy) {
                                         checkIcon = '✓ ';
                                         pill.style.border = '1px solid rgba(16, 185, 129, 0.35)';
-                                        pill.title = 'Active & Healthy (Verified)';
+                                        pill.title = `Active & Healthy • Last verified: ${day.verified_at || 'Recently'}`;
                                     } else {
                                         checkIcon = '⚠️ ';
                                         pill.style.border = '1px solid rgba(239, 68, 68, 0.6)';
                                         pill.style.color = '#fca5a5';
-                                        pill.title = tRes.reason || 'Issue detected';
+                                        pill.title = `Issue Detected: ${tRes.reason || 'Unhealthy'} • Checked: ${day.verified_at || 'Recently'}`;
                                     }
                                 }
+                            } else {
+                                pill.title = 'Click to open table in Poker Now';
                             }
 
                             pill.textContent = `${checkIcon}${t.game_type.toUpperCase()} Table ${t.table_num} (${t.sb}/${t.bb})`;
