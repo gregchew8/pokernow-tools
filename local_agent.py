@@ -681,6 +681,16 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Agent] Error reading admin_activity.json: {e}")
             self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
+        elif path == "/api/staged-queue":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                import stage_manager
+                summary = stage_manager.get_staged_queue_summary()
+                self.wfile.write(json.dumps({"success": True, "staged": summary}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
