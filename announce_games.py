@@ -206,8 +206,43 @@ def main():
         print("Test mode: dummy game data written to 'last_created_games.json'.")
         sys.exit(0)
 
-    # If no arguments are provided, determine the target day and create tables based on schedule.json
-    if not args:
+    # Check if pre-staged games exist for target_date and run pre-flight health check
+    target_date_str = target_date.strftime("%Y-%m-%d")
+    tables_already_staged = False
+
+    if not is_test and not args:
+        try:
+            import stage_manager
+            staged_data = stage_manager.load_staged_games()
+            staged_entry = staged_data.get(target_date_str)
+            if staged_entry and staged_entry.get("tables") and staged_entry.get("status") != "cancelled":
+                print(f"\n[StageManager] Found {len(staged_entry['tables'])} pre-staged tables for {target_date_str}.")
+                print(f"[StageManager] Running Pre-Flight Health Check on staged rooms...")
+                health = stage_manager.verify_staged_batch_health(target_date_str, run_http_probe=True)
+                if health.get("all_healthy"):
+                    print(f"[StageManager] Pre-flight health check PASSED! All staged tables are active and safe to dispatch.")
+                    game_history = {
+                        "date": target_date_str,
+                        "description": staged_entry.get("description", target_date.strftime("%m%d%y")),
+                        "game_ids": staged_entry.get("game_ids", []),
+                        "tables": staged_entry.get("tables", []),
+                        "is_adhoc": False
+                    }
+                    with open("last_created_games.json", "w") as f:
+                        json.dump(game_history, f, indent=4)
+                    
+                    staged_entry["status"] = "announced"
+                    staged_data[target_date_str] = staged_entry
+                    stage_manager.save_staged_games(staged_data)
+                    tables_already_staged = True
+                else:
+                    print(f"[StageManager] WARNING: Pre-flight health check FAILED for staged tables on {target_date_str}: {health}")
+                    print(f"[StageManager] Discarding invalid staged batch and falling back to live table setup...")
+        except Exception as e:
+            print(f"[StageManager] Error evaluating staged games: {e}. Falling back to standard table setup.")
+
+    # If no arguments are provided and tables were not already pre-staged, determine schedule and create tables
+    if not args and not tables_already_staged:
         print(f"Detecting game night day of week: {day_name.capitalize()}")
         
         schedule_file = "schedule.json"

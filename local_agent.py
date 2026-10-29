@@ -760,6 +760,18 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": success, "error": error_msg}).encode("utf-8"))
             return
 
+        elif path == "/api/staged-queue":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            try:
+                import stage_manager
+                summary = stage_manager.get_staged_queue_summary()
+                self.wfile.write(json.dumps({"success": True, "staged": summary}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+
         elif path == "/api/run-announcer":
             content_length = int(self.headers.get('Content-Length', 0))
             cmd = [sys.executable, "announce_games.py"]
@@ -885,6 +897,105 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
                 
+        elif path == "/api/stage-batch":
+            content_length = int(self.headers.get('Content-Length', 0))
+            days = 2
+            target_dates = []
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    days = payload.get("days", 2)
+                    target_dates = payload.get("dates", [])
+                except Exception as e:
+                    print(f"[Agent] Error parsing stage-batch payload: {e}")
+            cmd = [sys.executable, "batch_stage_games.py"]
+            if target_dates:
+                cmd += ["--dates", ",".join(target_dates)]
+            else:
+                cmd += ["--days", str(days)]
+            success = run_script_in_background("announcer", cmd)
+            if success and admin_email:
+                log_admin_activity(admin_email, "Started Staging Batch", f"days={days}, dates={target_dates}", admin_ip)
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+
+        elif path == "/api/purge-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_to_purge = ""
+            purge_all = False
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_to_purge = payload.get("date", "")
+                    purge_all = payload.get("all", False)
+                except Exception as e:
+                    print(f"[Agent] Error parsing purge-staged payload: {e}")
+            import stage_manager
+            if purge_all:
+                stage_manager.purge_all_staged()
+                success = True
+                if admin_email:
+                    log_admin_activity(admin_email, "Purged All Staged Games", "", admin_ip)
+            elif date_to_purge:
+                success, _ = stage_manager.purge_staged_day(date_to_purge)
+                if admin_email:
+                    log_admin_activity(admin_email, "Purged Staged Game", date_to_purge, admin_ip)
+            else:
+                success = False
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+
+        elif path == "/api/regenerate-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                except Exception as e:
+                    print(f"[Agent] Error parsing regenerate-staged payload: {e}")
+            if date_str:
+                import stage_manager
+                stage_manager.purge_staged_day(date_str)
+                cmd = [sys.executable, "batch_stage_games.py", "--date", date_str]
+                success = run_script_in_background("announcer", cmd)
+                if success and admin_email:
+                    log_admin_activity(admin_email, "Regenerated Staged Game", date_str, admin_ip)
+            else:
+                success = False
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+
+        elif path == "/api/verify-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                except Exception as e:
+                    pass
+            import stage_manager
+            if date_str:
+                res = stage_manager.verify_staged_batch_health(date_str, run_http_probe=True)
+            else:
+                staged = stage_manager.load_staged_games()
+                res = {d: stage_manager.verify_staged_batch_health(d, run_http_probe=True) for d in staged}
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "result": res}).encode("utf-8"))
+
         elif path == "/api/approve-email":
             task_type = "announcer"
             pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")

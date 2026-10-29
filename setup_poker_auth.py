@@ -500,6 +500,22 @@ def run(tables_to_create):
     if urls:
         today = datetime.datetime.now()
         is_adhoc_run = "--adhoc" in sys.argv
+        stage_date = None
+        stage_day_name = None
+        for i, a in enumerate(sys.argv):
+            if a == "--stage-date" and i + 1 < len(sys.argv):
+                stage_date = sys.argv[i + 1]
+            if a == "--stage-day-name" and i + 1 < len(sys.argv):
+                stage_day_name = sys.argv[i + 1]
+
+        if stage_date:
+            today_str = stage_date
+            try:
+                today = datetime.datetime.strptime(stage_date, "%Y-%m-%d")
+            except Exception:
+                today = datetime.datetime.now()
+        else:
+            today_str = today.strftime("%Y-%m-%d")
 
         # 1. Attempt to load existing history to prevent overwriting same-day games
         existing_history = {}
@@ -511,7 +527,6 @@ def run(tables_to_create):
                 print(f"Warning: Could not read existing last_created_games.json: {e}")
 
         # 2. Check if we should merge with today's existing run
-        today_str = today.strftime("%Y-%m-%d")
         if existing_history.get("date") == today_str:
             print("Detected existing tables created today. Merging new tables...")
             # Append new game IDs
@@ -567,9 +582,23 @@ def run(tables_to_create):
                 })
 
         try:
-            with open("last_created_games.json", "w") as f:
-                json.dump(game_history, f, indent=4)
-            print("Saved game details to 'last_created_games.json' for settlement automation.")
+            if stage_date:
+                import stage_manager
+                stage_manager.add_or_update_staged_day(
+                    date_str=today_str,
+                    day_name=stage_day_name or today.strftime("%A").lower(),
+                    tables_list=game_history["tables"],
+                    description=game_history["description"]
+                )
+                print(f"Staged {len(game_history['tables'])} tables for {today_str} in 'output/staged_games.json'")
+                # If stage_date is today, also write to last_created_games.json
+                if today_str == datetime.date.today().strftime("%Y-%m-%d"):
+                    with open("last_created_games.json", "w") as f:
+                        json.dump(game_history, f, indent=4)
+            else:
+                with open("last_created_games.json", "w") as f:
+                    json.dump(game_history, f, indent=4)
+                print("Saved game details to 'last_created_games.json' for settlement automation.")
             
             # Save a daily history archive
             archive_dir = "output"
@@ -598,6 +627,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip-turnstile", action="store_true", help="Skip Turnstile waiting (use when already logged in).")
     parser.add_argument("--auto-dealer", action="store_true", help="Automatically set dealer seat if missing.")
     parser.add_argument("--adhoc", action="store_true", help="Is ad-hoc run")
+    parser.add_argument("--stage-date", type=str, help="Scheduled date for staged tables (YYYY-MM-DD)")
+    parser.add_argument("--stage-day-name", type=str, help="Day name for staged tables (e.g. friday)")
     
     # Parse command-line arguments (including new flags)
     parsed = parser.parse_args()

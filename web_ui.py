@@ -713,6 +713,17 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     "success": False,
                     "error": str(e)
                 }).encode("utf-8"))
+        elif self.path == "/api/staged-queue":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                import stage_manager
+                summary = stage_manager.get_staged_queue_summary()
+                self.wfile.write(json.dumps({"success": True, "staged": summary}).encode("utf-8"))
+            except Exception as e:
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -827,6 +838,93 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+        elif self.path == "/api/stage-batch":
+            content_length = int(self.headers.get('Content-Length', 0))
+            days = 2
+            target_dates = []
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    days = payload.get("days", 2)
+                    target_dates = payload.get("dates", [])
+                except Exception as e:
+                    print(f"[WebUI] Error parsing stage-batch payload: {e}")
+            cmd = [sys.executable, "batch_stage_games.py"]
+            if target_dates:
+                cmd += ["--dates", ",".join(target_dates)]
+            else:
+                cmd += ["--days", str(days)]
+            success = run_script_in_background("announcer", cmd)
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/purge-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_to_purge = ""
+            purge_all = False
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_to_purge = payload.get("date", "")
+                    purge_all = payload.get("all", False)
+                except Exception as e:
+                    print(f"[WebUI] Error parsing purge-staged payload: {e}")
+            import stage_manager
+            if purge_all:
+                stage_manager.purge_all_staged()
+                success = True
+            elif date_to_purge:
+                success, _ = stage_manager.purge_staged_day(date_to_purge)
+            else:
+                success = False
+            self.send_response(200 if success else 400)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/regenerate-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                except Exception as e:
+                    print(f"[WebUI] Error parsing regenerate-staged payload: {e}")
+            if date_str:
+                import stage_manager
+                stage_manager.purge_staged_day(date_str)
+                cmd = [sys.executable, "batch_stage_games.py", "--date", date_str]
+                success = run_script_in_background("announcer", cmd)
+            else:
+                success = False
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+        elif self.path == "/api/verify-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                except Exception as e:
+                    pass
+            import stage_manager
+            if date_str:
+                res = stage_manager.verify_staged_batch_health(date_str, run_http_probe=True)
+            else:
+                staged = stage_manager.load_staged_games()
+                res = {d: stage_manager.verify_staged_batch_health(d, run_http_probe=True) for d in staged}
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "result": res}).encode("utf-8"))
         elif self.path == "/api/approve-email":
             task_type = "announcer"
             pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")
@@ -2887,6 +2985,43 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </div>
             </div>
 
+            <!-- Staged Games Queue Card -->
+            <div class="card full-width" id="staged-queue-card">
+                <h2>
+                    <span style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span>📋 Staged Games Queue</span>
+                    </span>
+                    <span id="staged-queue-badge" class="status-badge status-idle">0 Days Staged</span>
+                </h2>
+                <p class="subtitle">Pre-create upcoming game tables in advance in one sitting. On game night, healthy staged tables are announced automatically with zero manual Turnstile intervention.</p>
+                
+                <!-- Batch Staging Controls -->
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 1rem; margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <label for="sel-stage-days" style="font-size: 0.85rem; font-weight: 600; color: #fff;">Stage Upcoming:</label>
+                        <select id="sel-stage-days" style="background: rgba(0,0,0,0.35); color: #fff; border: 1px solid var(--border-color); padding: 0.35rem 0.6rem; border-radius: 4px; outline: none; cursor: pointer;">
+                            <option value="1">Next 1 Scheduled Game Night</option>
+                            <option value="2" selected>Next 2 Scheduled Game Nights</option>
+                            <option value="3">Next 3 Scheduled Game Nights</option>
+                            <option value="4">Next 4 Scheduled Game Nights (Safe Window)</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="btn-stage-batch" class="btn" style="background: #2563eb; width: auto; margin: 0; padding: 0.45rem 1rem; font-size: 0.85rem;" onclick="triggerStageBatch()">+ Stage Games Now</button>
+                        <button id="btn-verify-staged" class="btn" style="background: rgba(255,255,255,0.08); border: 1px solid var(--border-color); width: auto; margin: 0; padding: 0.45rem 0.8rem; font-size: 0.85rem;" onclick="triggerVerifyStaged()" title="Ping all staged room URLs on Poker Now to verify active status">🔍 Verify Links</button>
+                        <button id="btn-purge-all-staged" class="btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; width: auto; margin: 0; padding: 0.45rem 0.8rem; font-size: 0.85rem;" onclick="purgeAllStaged()" title="Purge all staged games">🗑️ Purge All</button>
+                    </div>
+                </div>
+
+                <!-- Staged List Container -->
+                <div id="staged-list-container">
+                    <div id="staged-empty-message" style="color: var(--text-muted); font-size: 0.85rem; padding: 1.25rem; text-align: center; border: 1px dashed rgba(255,255,255,0.1); border-radius: 6px;">
+                        No upcoming games currently staged. Use the controls above to pre-stage upcoming sessions in a single sitting.
+                    </div>
+                    <div id="staged-items-list" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+                </div>
+            </div>
+
             <!-- Settlement Card -->
             <div class="card">
                 <h2>
@@ -3696,6 +3831,9 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     } else {
                         draftBanner.style.display = 'none';
                     }
+
+                    // Update Staged Games Queue
+                    updateStagedQueue();
                 })
                 .catch(err => {
                     console.error("Error updating dashboard:", err);
@@ -3705,6 +3843,265 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         tsElem.style.color = '#ef4444';
                     }
                 });
+        }
+
+        function updateStagedQueue() {
+            fetch('/api/staged-queue')
+                .then(res => res.json())
+                .then(data => {
+                    if (!data || !data.success) return;
+                    const items = data.staged || [];
+                    const badge = document.getElementById('staged-queue-badge');
+                    const emptyMsg = document.getElementById('staged-empty-message');
+                    const listContainer = document.getElementById('staged-items-list');
+                    if (!listContainer) return;
+
+                    if (badge) {
+                        badge.textContent = `${items.length} Day${items.length === 1 ? '' : 's'} Staged`;
+                        badge.className = items.length > 0 ? 'status-badge status-running' : 'status-badge status-idle';
+                    }
+
+                    if (items.length === 0) {
+                        if (emptyMsg) emptyMsg.style.display = 'block';
+                        listContainer.innerHTML = '';
+                        return;
+                    }
+
+                    if (emptyMsg) emptyMsg.style.display = 'none';
+                    listContainer.innerHTML = '';
+
+                    items.forEach(day => {
+                        const row = document.createElement('div');
+                        row.style.background = 'rgba(0,0,0,0.25)';
+                        row.style.border = '1px solid var(--border-color)';
+                        row.style.borderRadius = '8px';
+                        row.style.padding = '0.85rem 1rem';
+                        row.style.display = 'flex';
+                        row.style.flexDirection = 'column';
+                        row.style.gap = '0.5rem';
+
+                        // Header with date, day name, health badge
+                        const header = document.createElement('div');
+                        header.style.display = 'flex';
+                        header.style.alignItems = 'center';
+                        header.style.justifyContent = 'space-between';
+                        header.style.flexWrap = 'wrap';
+                        header.style.gap = '0.5rem';
+
+                        const titleWrap = document.createElement('div');
+                        titleWrap.style.display = 'flex';
+                        titleWrap.style.alignItems = 'center';
+                        titleWrap.style.gap = '0.6rem';
+
+                        const dateTitle = document.createElement('strong');
+                        dateTitle.style.fontSize = '0.95rem';
+                        dateTitle.style.color = '#fff';
+                        dateTitle.textContent = `${day.day.toUpperCase()} • ${day.date} (${day.table_count} Table${day.table_count === 1 ? '' : 's'})`;
+                        titleWrap.appendChild(dateTitle);
+
+                        // Health Badge
+                        const hBadge = document.createElement('span');
+                        hBadge.style.fontSize = '0.72rem';
+                        hBadge.style.padding = '0.2rem 0.5rem';
+                        hBadge.style.borderRadius = '12px';
+                        hBadge.style.fontWeight = '600';
+
+                        if (day.health_badge === 'fresh') {
+                            hBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+                            hBadge.style.color = '#10b981';
+                            hBadge.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                            hBadge.textContent = `🟢 Fresh (${day.age_days}d old)`;
+                        } else if (day.health_badge === 'aging') {
+                            hBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+                            hBadge.style.color = '#f59e0b';
+                            hBadge.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+                            hBadge.textContent = `🟡 Aging (${day.age_days}d old)`;
+                        } else {
+                            hBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+                            hBadge.style.color = '#ef4444';
+                            hBadge.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                            hBadge.textContent = `🔴 Expired (>5d limit)`;
+                        }
+                        titleWrap.appendChild(hBadge);
+
+                        // Status badge (Staged vs Announced)
+                        const sBadge = document.createElement('span');
+                        sBadge.style.fontSize = '0.72rem';
+                        sBadge.style.padding = '0.2rem 0.5rem';
+                        sBadge.style.borderRadius = '12px';
+                        sBadge.style.fontWeight = '600';
+                        sBadge.style.background = day.status === 'announced' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(148, 163, 184, 0.15)';
+                        sBadge.style.color = day.status === 'announced' ? '#60a5fa' : 'var(--text-muted)';
+                        sBadge.style.border = '1px solid rgba(255,255,255,0.1)';
+                        sBadge.textContent = day.status.toUpperCase();
+                        titleWrap.appendChild(sBadge);
+
+                        header.appendChild(titleWrap);
+
+                        // Action buttons: Regenerate & Purge
+                        const btnGroup = document.createElement('div');
+                        btnGroup.style.display = 'flex';
+                        btnGroup.style.gap = '0.4rem';
+
+                        const btnRegen = document.createElement('button');
+                        btnRegen.className = 'btn';
+                        btnRegen.style.width = 'auto';
+                        btnRegen.style.margin = '0';
+                        btnRegen.style.padding = '0.3rem 0.7rem';
+                        btnRegen.style.fontSize = '0.75rem';
+                        btnRegen.style.background = 'rgba(59, 130, 246, 0.15)';
+                        btnRegen.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                        btnRegen.style.color = '#93c5fd';
+                        btnRegen.textContent = '🔄 Regenerate';
+                        btnRegen.onclick = () => regenerateStagedDay(day.date, day.day);
+
+                        const btnPurge = document.createElement('button');
+                        btnPurge.className = 'btn';
+                        btnPurge.style.width = 'auto';
+                        btnPurge.style.margin = '0';
+                        btnPurge.style.padding = '0.3rem 0.7rem';
+                        btnPurge.style.fontSize = '0.75rem';
+                        btnPurge.style.background = 'rgba(239, 68, 68, 0.15)';
+                        btnPurge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+                        btnPurge.style.color = '#fca5a5';
+                        btnPurge.textContent = '🗑️ Purge';
+                        btnPurge.onclick = () => purgeStagedDay(day.date, day.day);
+
+                        btnGroup.appendChild(btnRegen);
+                        btnGroup.appendChild(btnPurge);
+                        header.appendChild(btnGroup);
+                        row.appendChild(header);
+
+                        // Tables summary line
+                        const tblList = document.createElement('div');
+                        tblList.style.fontSize = '0.8rem';
+                        tblList.style.color = 'var(--text-muted)';
+                        tblList.style.display = 'flex';
+                        tblList.style.flexWrap = 'wrap';
+                        tblList.style.gap = '0.4rem';
+
+                        day.tables.forEach(t => {
+                            const pill = document.createElement('a');
+                            pill.href = `https://www.pokernow.club/games/${t.game_id}`;
+                            pill.target = '_blank';
+                            pill.style.background = 'rgba(255,255,255,0.05)';
+                            pill.style.border = '1px solid rgba(255,255,255,0.1)';
+                            pill.style.borderRadius = '4px';
+                            pill.style.padding = '0.15rem 0.45rem';
+                            pill.style.color = '#cbd5e1';
+                            pill.style.textDecoration = 'none';
+                            pill.textContent = `${t.game_type.toUpperCase()} Table ${t.table_num} (${t.sb}/${t.bb})`;
+                            tblList.appendChild(pill);
+                        });
+                        row.appendChild(tblList);
+
+                        listContainer.appendChild(row);
+                    });
+                })
+                .catch(e => console.error("Error loading staged queue:", e));
+        }
+
+        function triggerStageBatch() {
+            const sel = document.getElementById('sel-stage-days');
+            const days = parseInt(sel.value, 10) || 2;
+            if (!confirm(`Are you ready to batch stage the next ${days} scheduled game night(s)?\n\nGoogle Chrome will open on your Mac Mini. You will only need to verify the Turnstile checkbox on Table 1, and the rest will configure sequentially.`)) {
+                return;
+            }
+            fetch('/api/stage-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ days })
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert(`Batch staging started for the next ${days} game night(s)! Watch the live status indicator above.`);
+                    updateDashboard();
+                } else {
+                    alert("Failed to start batch staging. A task may already be running.");
+                }
+            })
+            .catch(err => alert("Error starting batch staging: " + err));
+        }
+
+        function triggerVerifyStaged() {
+            const btn = document.getElementById('btn-verify-staged');
+            btn.disabled = true;
+            btn.textContent = 'Verifying...';
+            fetch('/api/verify-staged', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = '🔍 Verify Links';
+                alert("Health verification completed! Staged status refreshed.");
+                updateStagedQueue();
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = '🔍 Verify Links';
+                alert("Error verifying links: " + err);
+            });
+        }
+
+        function purgeStagedDay(dateStr, dayName) {
+            if (!confirm(`Are you sure you want to purge staged tables for ${dayName ? dayName.toUpperCase() + ' ' : ''}(${dateStr})?\n\nThis will remove the day from the staging queue.`)) {
+                return;
+            }
+            fetch('/api/purge-staged', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: dateStr })
+            })
+            .then(res => {
+                if (res.ok) {
+                    updateStagedQueue();
+                } else {
+                    alert("Failed to purge staged day.");
+                }
+            })
+            .catch(err => alert("Error purging: " + err));
+        }
+
+        function purgeAllStaged() {
+            if (!confirm("Are you sure you want to PURGE ALL staged games from the queue?")) {
+                return;
+            }
+            fetch('/api/purge-staged', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ all: true })
+            })
+            .then(res => {
+                if (res.ok) {
+                    updateStagedQueue();
+                } else {
+                    alert("Failed to purge all.");
+                }
+            })
+            .catch(err => alert("Error purging all: " + err));
+        }
+
+        function regenerateStagedDay(dateStr, dayName) {
+            if (!confirm(`Regenerate tables for ${dayName ? dayName.toUpperCase() + ' ' : ''}(${dateStr})?\n\nThis will purge existing staged tables for this day and immediately launch Chrome to create fresh ones.`)) {
+                return;
+            }
+            fetch('/api/regenerate-staged', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: dateStr })
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert(`Regeneration started for ${dateStr}! Please check Chrome on your Mac Mini.`);
+                    updateDashboard();
+                } else {
+                    alert("Failed to start regeneration. A task may already be running.");
+                }
+            })
+            .catch(err => alert("Error regenerating: " + err));
         }
 
         function restartServer() {
