@@ -117,7 +117,9 @@ def run_health_check(force_alert=False):
 
     print(f"[HealthMonitor] [{now_str}] Running automated health verification on {len(staged)} staged day(s)...")
 
-    for date_str in sorted(staged.keys()):
+    for day_idx, date_str in enumerate(sorted(staged.keys())):
+        if day_idx > 0:
+            time.sleep(3.0)  # 3.0s pacing between day batches
         entry = staged[date_str]
         day_name = entry.get("day", "").upper()
         res = stage_manager.verify_staged_batch_health(date_str, run_http_probe=True)

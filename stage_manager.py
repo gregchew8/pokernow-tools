@@ -121,23 +121,23 @@ def check_single_game_health(game_id, staged_at_str=None):
 
     except urllib.error.HTTPError as he:
         if he.code == 429:
-            # Poker Now rate limiter: back off and retry once
-            time.sleep(2.5)
+            # Poker Now rate limiter: back off 5 seconds and retry once
+            time.sleep(5.0)
             try:
                 with urllib.request.urlopen(req, **kwargs) as resp:
                     final_url = resp.geturl()
                     if f"/games/{game_id}" in final_url:
                         return {
                             "healthy": True,
-                            "reason": "OK (active room)",
+                            "reason": "OK (active room, passed retry)",
                             "status_code": resp.getcode()
                         }
             except Exception:
                 pass
-            # If still rate-limited, do not treat active room as expired
+            # If still rate-limited, the room is active but Poker Now is throttling requests. Do not alert as failed.
             return {
                 "healthy": True,
-                "reason": "OK (active room, Poker Now rate limited)",
+                "reason": "OK (room active, throttled by rate limit)",
                 "status_code": 429
             }
 
@@ -171,7 +171,7 @@ def verify_staged_batch_health(date_str, run_http_probe=True):
 
     for idx, t in enumerate(tables):
         if idx > 0 and run_http_probe:
-            time.sleep(1.0)
+            time.sleep(2.5)  # 2.5s polite pacing between tables to avoid HTTP 429
         gid = t.get("game_id")
         if run_http_probe:
             res = check_single_game_health(gid, staged_at)
