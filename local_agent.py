@@ -1150,10 +1150,9 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
         elif path == "/api/restart":
             def _restart_web_ui():
                 time.sleep(0.5)
-                print("[Agent] Restarting com.pokernow.web_ui launchd service...")
-                plist_path = os.path.expanduser("~/Library/LaunchAgents/com.pokernow.web_ui.plist")
-                subprocess.run(["launchctl", "unload", plist_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["launchctl", "load", plist_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("[Agent] Restarting com.pokernow.web_ui process cleanly...")
+                # Since KeepAlive=true in the launchd plist, exiting allows launchd to immediately respawn it
+                os._exit(0)
             
             t = threading.Thread(target=_restart_web_ui, daemon=True)
             t.start()
