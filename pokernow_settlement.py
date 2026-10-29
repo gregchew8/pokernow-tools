@@ -18,7 +18,11 @@ import multiprocessing
 import os
 import pandas as pd
 import random
+import socket
 import requests
+import urllib3.util.connection as urllib3_cn
+
+urllib3_cn.allowed_gai_family = lambda: socket.AF_INET
 import sys
 import time
 import warnings
@@ -131,7 +135,11 @@ def download_ledgers(game_ids, ledger_dir):
     print(f"\nSuccessfully Cleaned Up dir {ledger_dir}\n")
 
     # Base URL pattern for downloading ledgers
-    base_url = "https://www.pokernow.club/games/{}/ledger_{}.csv"
+    base_url = "https://www.pokernow.com/games/{}/ledger_{}.csv"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 
     for game_id in game_ids:
         ledger_url = base_url.format(game_id, game_id)
@@ -139,18 +147,30 @@ def download_ledgers(game_ids, ledger_dir):
 
         file_path = os.path.join(ledger_dir, f"ledger_{game_id}.csv")
 
-        # Download the ledger
-        try:
-            response = requests.get(ledger_url)
-            response.raise_for_status()
-            with open(file_path, 'wb') as file:
-                file.write(response.content)
-            print(f"Downloaded {file_path}")
-        except Exception as e:
-            # Handle errors in downloading or writing the file
-            print(f"Error downloading ledger for game ID {game_id}: {e}. Manual downloading is suggested.")
+        downloaded = False
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(ledger_url, headers=headers, timeout=15)
+                if response.status_code == 429:
+                    print(f"Rate limited (429) on attempt {attempt}/3 for {game_id}. Waiting 5s...")
+                    time.sleep(5)
+                    continue
+                response.raise_for_status()
+                with open(file_path, 'wb') as file:
+                    file.write(response.content)
+                print(f"Downloaded {file_path}")
+                downloaded = True
+                break
+            except Exception as e:
+                print(f"Attempt {attempt} failed for game ID {game_id}: {e}")
+                if attempt < 3:
+                    time.sleep(3)
+
+        if not downloaded:
+            print(f"Error downloading ledger for game ID {game_id} after 3 attempts. Manual downloading is suggested.")
             return False
-        # Sleep a few secs for each download
+
+        # Polite delay between game downloads to avoid rate limits
         time.sleep(3)
 
     # Combine and save the downloaded ledgers

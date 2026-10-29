@@ -8,6 +8,18 @@ import datetime
 
 SKIP_TURNSTILE = False
 AUTO_DEALER = False
+TURNSTILE_TIMEOUT = int(os.environ.get("TURNSTILE_TIMEOUT", 300))
+
+def update_setup_status(data):
+    try:
+        status_path = os.path.join(os.getcwd(), "output", "setup_status.json")
+        os.makedirs(os.path.dirname(status_path), exist_ok=True)
+        temp_path = status_path + ".tmp"
+        with open(temp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(temp_path, status_path)
+    except Exception as e:
+        print(f"[Warning] Could not write setup status: {e}", file=sys.stderr)
 
 def run_applescript(script):
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
@@ -55,6 +67,29 @@ def run(tables_to_create):
         print("Please run login.py first to authenticate with Google.")
         return
 
+    # 0. Clean up any leftover Chrome processes and stale lock files
+    import shutil
+    import glob
+    subprocess.run(["pkill", "-f", "chrome-profile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1)
+    for sf in glob.glob(os.path.join(user_data_dir, "Singleton*")):
+        try:
+            os.remove(sf)
+        except Exception:
+            pass
+
+    # Pre-populate known game URLs from recent history so we never mistake old tabs for new tables
+    if os.path.exists("last_created_games.json"):
+        try:
+            with open("last_created_games.json", "r") as f:
+                past_data = json.load(f)
+                for gid in past_data.get("game_ids", []):
+                    if gid and not gid.startswith("http"):
+                        known_game_urls.add(f"https://www.pokernow.com/games/{gid}")
+                        known_game_urls.add(f"https://www.pokernow.club/games/{gid}")
+        except Exception:
+            pass
+
     chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     urls = []
     total_tables = len(tables_to_create)
@@ -71,24 +106,44 @@ def run(tables_to_create):
         print(f"============================================================")
         
         # 1. Clear previous session tabs to prevent Chrome from restoring them
-        import shutil
         sessions_dir = os.path.join(user_data_dir, "Default", "Sessions")
         if os.path.exists(sessions_dir):
             try:
                 shutil.rmtree(sessions_dir)
             except Exception:
                 pass
+        for session_file in ["Current Session", "Current Tabs", "Last Session", "Last Tabs"]:
+            sp = os.path.join(user_data_dir, "Default", session_file)
+            if os.path.exists(sp):
+                try:
+                    os.remove(sp)
+                except Exception:
+                    pass
 
         # 2. Open the Turnstile-bypassing Chrome window for this table
         print(f"Launching clean Google Chrome window for Table {idx+1}...")
+        update_setup_status({
+            "active": True,
+            "current_table": idx + 1,
+            "total_tables": total_tables,
+            "game_type": game_type.upper(),
+            "sb": sb,
+            "bb": bb,
+            "status": "launching",
+            "message": f"Launching Chrome for Table {idx+1} of {total_tables} ({game_type.upper()})...",
+            "timeout_seconds": TURNSTILE_TIMEOUT,
+            "seconds_remaining": TURNSTILE_TIMEOUT,
+            "updated_at": time.time()
+        })
         cmd = [
             chrome_path,
             f"--user-data-dir={user_data_dir}",
             "--password-store=basic",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-session-crashed-bubble",
             "--new-window",
-            "https://www.pokernow.club/start-game"
+            "https://www.pokernow.com/start-game"
         ]
         chrome_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(5.0)
@@ -103,7 +158,22 @@ def run(tables_to_create):
         run_applescript('tell application "Google Chrome" to activate')
         
         detected_url = None
-        for _ in range(45): # Wait up to 45 seconds for manual Turnstile bypass
+        for elapsed in range(TURNSTILE_TIMEOUT):
+            rem = max(0, TURNSTILE_TIMEOUT - elapsed)
+            update_setup_status({
+                "active": True,
+                "current_table": idx + 1,
+                "total_tables": total_tables,
+                "game_type": game_type.upper(),
+                "sb": sb,
+                "bb": bb,
+                "status": "waiting_turnstile",
+                "message": f"Waiting for Turnstile verification on Table {idx+1} of {total_tables} ({game_type.upper()})...",
+                "seconds_elapsed": elapsed,
+                "timeout_seconds": TURNSTILE_TIMEOUT,
+                "seconds_remaining": rem,
+                "updated_at": time.time()
+            })
             # Get all URLs of all tabs across all Chrome windows
             urls_str = run_applescript('''
             tell application "Google Chrome"
@@ -133,6 +203,20 @@ def run(tables_to_create):
                     break
             
             if detected_url:
+                update_setup_status({
+                    "active": True,
+                    "current_table": idx + 1,
+                    "total_tables": total_tables,
+                    "game_type": game_type.upper(),
+                    "sb": sb,
+                    "bb": bb,
+                    "status": "configuring",
+                    "message": f"Table {idx+1} created! Configuring game settings...",
+                    "detected_url": detected_url,
+                    "timeout_seconds": TURNSTILE_TIMEOUT,
+                    "seconds_remaining": 0,
+                    "updated_at": time.time()
+                })
                 break
                 
             creation_urls = [u for u in all_urls if "/games/" not in u]
@@ -162,6 +246,14 @@ def run(tables_to_create):
             
 
         if not detected_url:
+            update_setup_status({
+                "active": False,
+                "current_table": idx + 1,
+                "total_tables": total_tables,
+                "status": "timed_out",
+                "message": f"Timed out waiting for game creation on Table {idx+1} ({TURNSTILE_TIMEOUT}s limit).",
+                "updated_at": time.time()
+            })
             if SKIP_TURNSTILE:
                 print("[Warning] Turnstile was skipped; proceeding without detecting game URL.")
                 # Continue without raising error; downstream may fail if URL needed.
@@ -370,8 +462,22 @@ def run(tables_to_create):
         
         # Verify URL again just in case
         final_url = run_applescript('tell application "Google Chrome" to return URL of active tab of front window')
-        print(f"Table configured successfully! Room URL: {final_url}")
-        urls.append((table_info, final_url))
+        if final_url and ("/games/" in final_url):
+            table_url = final_url
+        else:
+            table_url = detected_url
+        print(f"Table configured successfully! Room URL: {table_url}")
+        urls.append((table_info, table_url))
+        update_setup_status({
+            "active": True,
+            "current_table": idx + 1,
+            "total_tables": total_tables,
+            "game_type": game_type.upper(),
+            "status": "table_complete",
+            "message": f"Table {idx+1} of {total_tables} configured successfully! ({table_url})",
+            "detected_url": table_url,
+            "updated_at": time.time()
+        })
         
         # Terminate Chrome to close this window before starting the next table
         print("Closing Chrome window for cleanup...")
@@ -380,6 +486,7 @@ def run(tables_to_create):
             chrome_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             chrome_proc.kill()
+        subprocess.run(["pkill", "-f", "chrome-profile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(2)
         
     print("\n============================================================")
@@ -474,6 +581,13 @@ def run(tables_to_create):
         except Exception as e:
             print(f"Warning: Could not save game files: {e}")
 
+    update_setup_status({
+        "active": False,
+        "status": "complete",
+        "message": f"All {total_tables} tables created and configured successfully!",
+        "updated_at": time.time()
+    })
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create Poker Now tables.")
@@ -540,4 +654,13 @@ if __name__ == "__main__":
                     sys.exit(1)
                     
     # Run the table creation with the parsed flags
-    run(tables_to_create)
+    try:
+        run(tables_to_create)
+    except Exception as e:
+        update_setup_status({
+            "active": False,
+            "status": "error",
+            "message": str(e),
+            "updated_at": time.time()
+        })
+        raise

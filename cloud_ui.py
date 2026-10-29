@@ -347,7 +347,11 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Bad Gateway: Mac Mini local agent not configured"}).encode("utf-8"))
+            now_str = datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p")
+            self.wfile.write(json.dumps({
+                "error": "Bad Gateway: Mac Mini local agent not configured",
+                "server_time": f"{now_str} (Cloud UI - Agent Not Configured)"
+            }).encode("utf-8"))
             return
 
         session_id = self.get_session_id()
@@ -397,7 +401,11 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": f"Bad Gateway: Failed to contact local agent: {e}"}).encode("utf-8"))
+            now_str = datetime.datetime.now().strftime("%A, %b %d, %Y - %I:%M:%S %p")
+            self.wfile.write(json.dumps({
+                "error": f"Bad Gateway: Failed to contact local agent: {e}",
+                "server_time": f"{now_str} (Cloud UI - Agent Offline)"
+            }).encode("utf-8"))
 
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path)
@@ -439,6 +447,7 @@ class CloudUIHandler(BaseHTTPRequestHandler):
         if path == "/":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             # Serve the standard dashboard
             dashboard_html = WebUIHandler.get_html_dashboard(None)
@@ -462,6 +471,17 @@ class CloudUIHandler(BaseHTTPRequestHandler):
                 </div>
 
                 <div id="admin-activity-content" style="display: none;">
+                    <div style="margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; background: rgba(79, 70, 229, 0.12); border: 1px solid rgba(79, 70, 229, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="font-size: 1.5rem;">📊</span>
+                            <div>
+                                <div style="font-weight: 600; color: #a5b4fc; font-size: 0.95rem;">Stats Database & Player Analytics</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">View overall win/loss trajectory, player leaderboards, and session history.</div>
+                            </div>
+                        </div>
+                        <a href="/analytics" style="padding: 0.45rem 1rem; background: var(--primary); color: white; text-decoration: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.2s; white-space: nowrap;">Open Stats Database →</a>
+                    </div>
+
                     <div style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(15, 23, 42, 0.4); padding: 10px;">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; font-family:'Outfit',sans-serif;">
                             <thead>
@@ -548,7 +568,8 @@ class CloudUIHandler(BaseHTTPRequestHandler):
             setInterval(loadAdminActivityLogs, 10000);
             </script>
             """
-            dashboard_html = dashboard_html.replace("<!-- Logs Section -->", admin_logs_html + "<!-- Logs Section -->")
+            if "<!-- Admin Logs Section -->" not in dashboard_html:
+                dashboard_html = dashboard_html.replace("<!-- Logs Section -->", admin_logs_html + "<!-- Logs Section -->")
             
             # Inject Session HUD, Renew button, Logout, and Active Sessions Box
             injected_html = """

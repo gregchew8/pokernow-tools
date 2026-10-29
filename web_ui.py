@@ -53,6 +53,18 @@ def run_script_in_background(task_name, cmd):
         finally:
             with status_lock:
                 running_tasks[task_name] = False
+                if task_name == "announcer":
+                    status_path = os.path.join(WORKING_DIR, "output", "setup_status.json")
+                    if os.path.exists(status_path):
+                        try:
+                            with open(status_path, "r") as f:
+                                s_data = json.load(f)
+                            if s_data.get("active"):
+                                s_data["active"] = False
+                                with open(status_path, "w") as f:
+                                    json.dump(s_data, f, indent=2)
+                        except Exception:
+                            pass
                 
     t = threading.Thread(target=worker)
     t.daemon = True
@@ -463,6 +475,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
         if self.path == "/":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(self.get_html_dashboard().encode("utf-8"))
         elif self.path == "/analytics":
@@ -559,9 +572,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     except:
                         pass
 
+                setup_status = {}
+                setup_status_file = os.path.join(WORKING_DIR, "output", "setup_status.json")
+                if os.path.exists(setup_status_file):
+                    try:
+                        with open(setup_status_file, "r") as f:
+                            setup_status = json.load(f)
+                    except Exception:
+                        pass
+
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
+                    "setup_status": setup_status,
                     "last_games": last_games,
                     "announcer_stdout": a_stdout,
                     "announcer_stderr": a_stderr,
@@ -621,6 +644,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[WebUI] Error reading schedule.json: {e}")
             self.wfile.write(json.dumps(schedule_data).encode("utf-8"))
+        elif self.path == "/api/activity-logs":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            activity_file = os.path.join(WORKING_DIR, "output", "admin_activity.json")
+            logs = []
+            if os.path.exists(activity_file):
+                try:
+                    with open(activity_file, "r") as f:
+                        logs = json.load(f)
+                except Exception as e:
+                    print(f"[WebUI] Error reading admin_activity.json: {e}")
+            self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
         elif self.path.startswith("/api/player-stats"):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -1312,9 +1348,12 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <h1 style="margin: 0;">Poker Player Analytics</h1>
                 <p class="subtitle" style="margin: 5px 0 0 0;">Wins/Losses & Win Rate Performance Dashboard</p>
             </div>
-            <div id="db-health-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(30, 41, 59, 0.5); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
-                <span id="db-health-light" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; box-shadow: 0 0 8px #94a3b8; display: inline-block; transition: all 0.3s ease;"></span>
-                <span id="db-health-text">DB Connecting...</span>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <a href="/" style="padding: 0.45rem 0.9rem; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: var(--text-color); text-decoration: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.2s;">← Back to Control Panel</a>
+                <div id="db-health-badge" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(30, 41, 59, 0.5); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
+                    <span id="db-health-light" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; box-shadow: 0 0 8px #94a3b8; display: inline-block; transition: all 0.3s ease;"></span>
+                    <span id="db-health-text">DB Connecting...</span>
+                </div>
             </div>
         </header>
 
@@ -2329,6 +2368,13 @@ class WebUIHandler(BaseHTTPRequestHandler):
             animation: pulse 1.5s infinite;
         }
 
+        .status-warning {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            animation: pulse 1.5s infinite;
+        }
+
         @keyframes pulse {
             0% { opacity: 0.6; }
             50% { opacity: 1; }
@@ -2745,7 +2791,10 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 <span>Version: <strong style="font-family: 'JetBrains Mono', monospace; color: #a5b4fc;">{{VERSION_STR}}</strong></span>
             </div>
             <div id="server-timestamp" style="font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; color: #10b981; margin-top: 0.75rem; text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); font-weight: bold;">Loading system time...</div>
-            <button id="btn-restart-server" class="btn" style="position: absolute; right: 0; top: 1.25rem; width: auto; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.8rem; padding: 0.4rem 0.8rem; margin: 0; cursor: pointer; border-radius: 4px; transition: all 0.2s;" onclick="restartServer()">Restart Server</button>
+            <div style="position: absolute; right: 0; top: 1.25rem; display: flex; align-items: center; gap: 0.6rem;">
+                <a href="/analytics" id="btn-header-stats" class="admin-stats-link" style="display: none; background: rgba(79, 70, 229, 0.2); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc; font-size: 0.8rem; padding: 0.4rem 0.8rem; text-decoration: none; border-radius: 4px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='rgba(79, 70, 229, 0.35)'" onmouseout="this.style.background='rgba(79, 70, 229, 0.2)'">📊 Stats Database</a>
+                <button id="btn-restart-server" class="btn" style="width: auto; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; font-size: 0.8rem; padding: 0.4rem 0.8rem; margin: 0; cursor: pointer; border-radius: 4px; transition: all 0.2s;" onclick="restartServer()">Restart Server</button>
+            </div>
         </header>
 
         <div id="skip-schedule-banner" class="banner banner-warning" style="display: none;">
@@ -2818,6 +2867,19 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         <option value="friday">Friday</option>
                         <option value="saturday">Saturday</option>
                     </select>
+                </div>
+                <!-- Live Turnstile & Setup Progress Banner -->
+                <div id="announcer-live-status" style="display: none; margin-top: 0.5rem; margin-bottom: 0.85rem; padding: 0.85rem 1rem; border-radius: 8px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                        <span style="font-weight: 600; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem;">
+                            <span id="announcer-status-icon" style="font-size: 1.1rem;">⚠️</span>
+                            <span id="announcer-status-title" style="color: #f59e0b;">Action Required: Turnstile Verification</span>
+                        </span>
+                        <span id="announcer-status-timer" style="font-size: 0.8rem; font-family: monospace; font-weight: 600; background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px; color: #fde68a;">--:--</span>
+                    </div>
+                    <div id="announcer-status-message" style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.4;">
+                        Waiting for human verification...
+                    </div>
                 </div>
                 <div style="display: flex; gap: 0.5rem; width: 100%;">
                     <button id="btn-announcer" class="btn" style="flex: 1;" onclick="triggerTask('announcer')">Start Table Setup</button>
@@ -2932,6 +2994,58 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 </div>
             </div>
 
+            <!-- Admin Logs Section -->
+            <div id="admin-activity-card" class="card full-width" style="position: relative;">
+                <h2>Admin Activity Logs</h2>
+                
+                <!-- PIN Overlay -->
+                <div id="activity-pin-overlay" style="display: none; padding: 2.5rem 1rem; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+                    <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-color);">Admin logs are locked</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Please enter the 4-digit PIN to view activity logs and database links.</p>
+                    <div style="display: flex; justify-content: center; gap: 0.5rem; align-items: center; max-width: 320px; margin: 0 auto;">
+                        <input type="password" id="admin-pin-input" maxlength="4" placeholder="••••" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; padding: 0.6rem; font-size: 1.1rem; letter-spacing: 0.5em; text-align: center; width: 120px; font-family: monospace;" onkeyup="checkPinInput(event)">
+                        <button class="btn-action btn-primary" onclick="unlockAdminLogs()" style="margin: 0; padding: 0.6rem 1.2rem;">Unlock</button>
+                    </div>
+                    <div id="pin-error-msg" style="color: var(--danger); font-size: 0.8rem; margin-top: 0.75rem; display: none;">Invalid PIN!</div>
+                </div>
+
+                <div id="admin-activity-content" style="display: none;">
+                    <div style="margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; background: rgba(79, 70, 229, 0.12); border: 1px solid rgba(79, 70, 229, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="font-size: 1.5rem;">📊</span>
+                            <div>
+                                <div style="font-weight: 600; color: #a5b4fc; font-size: 0.95rem;">Stats Database & Player Analytics</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">View overall win/loss trajectory, player leaderboards, and session history.</div>
+                            </div>
+                        </div>
+                        <a href="/analytics" style="padding: 0.45rem 1rem; background: var(--primary); color: white; text-decoration: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.2s; white-space: nowrap;">Open Stats Database →</a>
+                    </div>
+
+                    <div style="max-height: 250px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(15, 23, 42, 0.4); padding: 10px;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; font-family:'Outfit',sans-serif;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: #94a3b8; font-weight: 600;">
+                                    <th style="padding: 8px;">Time</th>
+                                    <th style="padding: 8px;">Admin</th>
+                                    <th style="padding: 8px;">Action</th>
+                                    <th style="padding: 8px;">Details</th>
+                                    <th style="padding: 8px;">IP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-activity-table-body">
+                                <tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">Loading activity logs...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="chk-system-logs-pin" style="cursor: pointer;" onchange="toggleSystemLogsPin(this)">
+                        <label for="chk-system-logs-pin" style="cursor: pointer;">Hide System Logs & Outputs behind PIN</label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Logs Section -->
             <div id="admin-logs-card" class="card full-width" style="position: relative;">
                 <h2>System Logs & Outputs</h2>
@@ -2982,8 +3096,33 @@ class WebUIHandler(BaseHTTPRequestHandler):
     <script>
         function updateDashboard() {
             fetch('/api/status')
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().catch(() => ({
+                            error: `Server returned HTTP ${res.status}`,
+                            server_time: 'Offline (HTTP ' + res.status + ')'
+                        }));
+                    }
+                    return res.json();
+                })
                 .then(data => {
+                    // Update server timestamp immediately at the start
+                    const tsElem = document.getElementById('server-timestamp');
+                    if (tsElem && data) {
+                        if (data.error && !data.server_time) {
+                            tsElem.textContent = 'Offline (' + (data.error.length > 35 ? data.error.substring(0, 32) + '...' : data.error) + ')';
+                            tsElem.style.color = '#ef4444';
+                        } else {
+                            tsElem.textContent = data.server_time || 'Offline';
+                            tsElem.style.color = (data.error || !data.server_time) ? '#f59e0b' : '#10b981';
+                        }
+                    }
+
+                    if (!data || data.error) {
+                        console.warn("Status endpoint error or offline agent:", data ? data.error : "No data received");
+                        return;
+                    }
+
                     // Update Diagnosis Card
                     const diagCard = document.getElementById('diagnostic-card');
                     const hasHistory = data.errors_history && data.errors_history.length > 0;
@@ -3174,18 +3313,109 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     const announcerBadge = document.getElementById('announcer-badge');
                     const btnAnnouncer = document.getElementById('btn-announcer');
                     const btnKillAnnouncer = document.getElementById('btn-kill-announcer');
+                    const liveStatusBox = document.getElementById('announcer-live-status');
+                    const liveStatusIcon = document.getElementById('announcer-status-icon');
+                    const liveStatusTitle = document.getElementById('announcer-status-title');
+                    const liveStatusMsg = document.getElementById('announcer-status-message');
+                    const liveStatusTimer = document.getElementById('announcer-status-timer');
+                    const setupStatus = data.setup_status || {};
+
                     if (data.announcer_running) {
-                        announcerBadge.textContent = 'Running';
-                        announcerBadge.className = 'status-badge status-running';
-                        btnAnnouncer.disabled = true;
-                        btnAnnouncer.textContent = 'Setting up Tables...';
                         btnKillAnnouncer.style.display = 'block';
+                        btnAnnouncer.disabled = true;
+
+                        if (setupStatus.active && setupStatus.status === 'waiting_turnstile') {
+                            announcerBadge.textContent = 'Turnstile Required (' + (setupStatus.current_table || 1) + '/' + (setupStatus.total_tables || 3) + ')';
+                            announcerBadge.className = 'status-badge status-warning';
+                            btnAnnouncer.textContent = 'Waiting for Turnstile Click...';
+
+                            if (liveStatusBox) {
+                                liveStatusBox.style.display = 'block';
+                                liveStatusBox.style.background = 'rgba(245, 158, 11, 0.15)';
+                                liveStatusBox.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                                if (liveStatusIcon) liveStatusIcon.textContent = '⚠️';
+                                if (liveStatusTitle) {
+                                    liveStatusTitle.style.color = '#f59e0b';
+                                    liveStatusTitle.textContent = 'Action Required: Verify Table ' + (setupStatus.current_table || 1) + ' of ' + (setupStatus.total_tables || 3) + (setupStatus.game_type ? ' (' + setupStatus.game_type + ')' : '');
+                                }
+                                if (liveStatusMsg) {
+                                    liveStatusMsg.textContent = 'Switch to Chrome on your Mac Mini (or open Remote Desktop) and click "Verify you are human". Setup will continue automatically once verified.';
+                                }
+                                if (liveStatusTimer) {
+                                    const rem = setupStatus.seconds_remaining || 0;
+                                    const mins = Math.floor(rem / 60);
+                                    const secs = rem % 60;
+                                    liveStatusTimer.textContent = 'Timeout in ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                                }
+                            }
+                        } else if (setupStatus.active && setupStatus.status === 'configuring') {
+                            announcerBadge.textContent = 'Configuring Table ' + (setupStatus.current_table || 1);
+                            announcerBadge.className = 'status-badge status-running';
+                            btnAnnouncer.textContent = 'Configuring Table ' + (setupStatus.current_table || 1) + '...';
+
+                            if (liveStatusBox) {
+                                liveStatusBox.style.display = 'block';
+                                liveStatusBox.style.background = 'rgba(59, 130, 246, 0.15)';
+                                liveStatusBox.style.borderColor = 'rgba(59, 130, 246, 0.45)';
+                                if (liveStatusIcon) liveStatusIcon.textContent = '⚙️';
+                                if (liveStatusTitle) {
+                                    liveStatusTitle.style.color = '#60a5fa';
+                                    liveStatusTitle.textContent = 'Configuring Table ' + (setupStatus.current_table || 1) + ' of ' + (setupStatus.total_tables || 3);
+                                }
+                                if (liveStatusMsg) {
+                                    liveStatusMsg.textContent = setupStatus.message || 'Applying game stakes and table configurations...';
+                                }
+                                if (liveStatusTimer) liveStatusTimer.textContent = 'In Progress';
+                            }
+                        } else if (setupStatus.active && setupStatus.status === 'table_complete') {
+                            announcerBadge.textContent = 'Table ' + (setupStatus.current_table || 1) + ' Ready';
+                            announcerBadge.className = 'status-badge status-running';
+                            btnAnnouncer.textContent = 'Next Table...';
+
+                            if (liveStatusBox) {
+                                liveStatusBox.style.display = 'block';
+                                liveStatusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                                liveStatusBox.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+                                if (liveStatusIcon) liveStatusIcon.textContent = '✅';
+                                if (liveStatusTitle) {
+                                    liveStatusTitle.style.color = '#10b981';
+                                    liveStatusTitle.textContent = 'Table ' + (setupStatus.current_table || 1) + ' Ready!';
+                                }
+                                if (liveStatusMsg) {
+                                    liveStatusMsg.textContent = setupStatus.message || 'Table created and configured.';
+                                }
+                                if (liveStatusTimer) liveStatusTimer.textContent = 'Advancing...';
+                            }
+                        } else {
+                            announcerBadge.textContent = 'Running';
+                            announcerBadge.className = 'status-badge status-running';
+                            btnAnnouncer.textContent = 'Setting up Tables...';
+
+                            if (liveStatusBox) {
+                                liveStatusBox.style.display = 'block';
+                                liveStatusBox.style.background = 'rgba(148, 163, 184, 0.1)';
+                                liveStatusBox.style.borderColor = 'rgba(148, 163, 184, 0.25)';
+                                if (liveStatusIcon) liveStatusIcon.textContent = '⏳';
+                                if (liveStatusTitle) {
+                                    liveStatusTitle.style.color = '#e2e8f0';
+                                    liveStatusTitle.textContent = 'Table Setup Initializing';
+                                }
+                                if (liveStatusMsg) {
+                                    liveStatusMsg.textContent = setupStatus.message || 'Starting Chrome and loading Poker Now lobby...';
+                                }
+                                if (liveStatusTimer) liveStatusTimer.textContent = '';
+                            }
+                        }
                     } else {
                         announcerBadge.textContent = 'Idle';
                         announcerBadge.className = 'status-badge status-idle';
                         btnAnnouncer.disabled = data.settlement_running;
                         btnAnnouncer.textContent = 'Start Table Setup';
                         btnKillAnnouncer.style.display = 'none';
+
+                        if (liveStatusBox) {
+                            liveStatusBox.style.display = 'none';
+                        }
                     }
 
                     // Update Settlement Status
@@ -3442,9 +3672,6 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         activeContainer.innerHTML = '<div class="no-games">No active tables found. Click "Start Table Setup" to create them.</div>';
                     }
                     
-                    // Update server timestamp
-                    document.getElementById('server-timestamp').textContent = data.server_time || 'Offline';
-
                     // Update skip schedule banner and toggle
                     const skipBanner = document.getElementById('skip-schedule-banner');
                     if (data.skip_schedule_tonight) {
@@ -3470,7 +3697,14 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         draftBanner.style.display = 'none';
                     }
                 })
-                .catch(err => console.error("Error updating dashboard:", err));
+                .catch(err => {
+                    console.error("Error updating dashboard:", err);
+                    const tsElem = document.getElementById('server-timestamp');
+                    if (tsElem) {
+                        tsElem.textContent = 'Offline (Connection Error)';
+                        tsElem.style.color = '#ef4444';
+                    }
+                });
         }
 
         function restartServer() {
@@ -4096,6 +4330,70 @@ class WebUIHandler(BaseHTTPRequestHandler):
                     activityContent.style.display = 'block';
                 }
             }
+
+            // Stats Database link visibility logic
+            const statsLinks = document.querySelectorAll('.admin-stats-link');
+            statsLinks.forEach(el => {
+                el.style.display = isLocked ? 'none' : 'inline-flex';
+            });
+        }
+
+        function loadAdminActivityLogs() {
+            fetch('/api/activity-logs')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('admin-activity-table-body');
+                    if (!tbody) return;
+                    tbody.innerHTML = '';
+                    if (!data.logs || data.logs.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8;">No activity logged yet.</td></tr>';
+                        return;
+                    }
+                    data.logs.forEach(log => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        tr.style.color = '#e2e8f0';
+                        
+                        const tdTime = document.createElement('td');
+                        tdTime.style.padding = '8px';
+                        tdTime.style.whiteSpace = 'nowrap';
+                        tdTime.textContent = log.time;
+                        
+                        const tdAdmin = document.createElement('td');
+                        tdAdmin.style.padding = '8px';
+                        tdAdmin.style.color = '#a5b4fc';
+                        tdAdmin.textContent = log.email;
+                        
+                        const tdAction = document.createElement('td');
+                        tdAction.style.padding = '8px';
+                        tdAction.style.fontWeight = '600';
+                        if (log.action.includes('login') || log.action.includes('Login')) {
+                            tdAction.style.color = '#34d399';
+                        } else if (log.action.includes('logout') || log.action.includes('Logout')) {
+                            tdAction.style.color = '#f87171';
+                        } else {
+                            tdAction.style.color = '#60a5fa';
+                        }
+                        tdAction.textContent = log.action;
+                        
+                        const tdDetails = document.createElement('td');
+                        tdDetails.style.padding = '8px';
+                        tdDetails.textContent = log.details || '-';
+                        
+                        const tdIp = document.createElement('td');
+                        tdIp.style.padding = '8px';
+                        tdIp.style.color = '#94a3b8';
+                        tdIp.textContent = log.ip || '-';
+                        
+                        tr.appendChild(tdTime);
+                        tr.appendChild(tdAdmin);
+                        tr.appendChild(tdAction);
+                        tr.appendChild(tdDetails);
+                        tr.appendChild(tdIp);
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(err => console.error("Error loading admin logs:", err));
         }
         
         async function sha256(message) {

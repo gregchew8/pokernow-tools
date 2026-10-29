@@ -1,11 +1,17 @@
-#!/usr/bin/env python3
 import os
 import sys
 import json
+import socket
 import smtplib
 import subprocess
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+try:
+    import urllib3.util.connection as urllib3_cn
+    urllib3_cn.allowed_gai_family = lambda: socket.AF_INET
+except ImportError:
+    pass
 
 def send_email(subject, html_content):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")

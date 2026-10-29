@@ -96,6 +96,18 @@ def run_script_in_background(task_name, cmd):
         finally:
             with status_lock:
                 running_tasks[task_name] = False
+                if task_name == "announcer":
+                    status_path = os.path.join(WORKING_DIR, "output", "setup_status.json")
+                    if os.path.exists(status_path):
+                        try:
+                            with open(status_path, "r") as f:
+                                s_data = json.load(f)
+                            if s_data.get("active"):
+                                s_data["active"] = False
+                                with open(status_path, "w") as f:
+                                    json.dump(s_data, f, indent=2)
+                        except Exception:
+                            pass
                 
     t = threading.Thread(target=worker)
     t.daemon = True
@@ -582,9 +594,19 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
                     except:
                         pass
 
+                setup_status = {}
+                setup_status_file = os.path.join(WORKING_DIR, "output", "setup_status.json")
+                if os.path.exists(setup_status_file):
+                    try:
+                        with open(setup_status_file, "r") as f:
+                            setup_status = json.load(f)
+                    except Exception:
+                        pass
+
                 status = {
                     "announcer_running": running_tasks["announcer"],
                     "settlement_running": running_tasks["settlement"],
+                    "setup_status": setup_status,
                     "last_games": last_games,
                     "announcer_stdout": a_stdout,
                     "announcer_stderr": a_stderr,

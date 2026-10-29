@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import os
 import sys
+import socket
 import requests
+import urllib3.util.connection as urllib3_cn
+
+urllib3_cn.allowed_gai_family = lambda: socket.AF_INET
 
 CSV_FILE = "payment_info.csv"
 ENV_VAR = "GOOGLE_SHEET_CSV_URL"

@@ -52,7 +52,7 @@ def send_email(subject, html_content, text_content, email_type="announcement"):
 
 def post_to_discord(subject, text_content):
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
+    if not webhook_url or webhook_url.endswith("..."):
         return False
 
     import requests
@@ -324,7 +324,7 @@ def main():
         sb = t.get("sb")
         bb = t.get("bb")
         stakes_suffix = f" {sb}/{bb}" if sb and bb else ""
-        url = f"https://www.pokernow.club/games/{game_id}"
+        url = f"https://www.pokernow.com/games/{game_id}"
         
         text_lines.append(f"- {game_type}{stakes_suffix} Table {table_num}: {url}")
         html_lines.append(f"<li><strong><a href=\"{url}\">{game_type}{stakes_suffix} Table {table_num}</a></strong></li>")
@@ -378,10 +378,35 @@ def main():
         # Automatically backup outputs to Google Drive
         sync_to_google_drive()
 
+    status_file = os.path.join(os.getcwd(), "output", "setup_status.json")
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, "r") as f:
+                s_data = json.load(f)
+            s_data["active"] = False
+            s_data["status"] = "complete"
+            s_data["message"] = "Game announcement sent successfully!"
+            with open(status_file, "w") as f:
+                json.dump(s_data, f, indent=2)
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        status_file = os.path.join(os.getcwd(), "output", "setup_status.json")
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, "r") as f:
+                    s_data = json.load(f)
+                s_data["active"] = False
+                s_data["status"] = "error"
+                s_data["message"] = str(e)
+                with open(status_file, "w") as f:
+                    json.dump(s_data, f, indent=2)
+            except Exception:
+                pass
         import traceback
         import datetime
         error_msg = traceback.format_exc()
