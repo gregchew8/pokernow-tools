@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY cloud_ui.py /app/
 COPY web_ui.py /app/
 COPY db_client.py /app/
+COPY stage_manager.py /app/
 
 # Expose port (Railway will override PORT env var)
 EXPOSE 8080
