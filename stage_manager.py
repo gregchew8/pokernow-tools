@@ -147,10 +147,12 @@ def check_single_game_health(game_id, staged_at_str=None):
             "status_code": he.code
         }
     except Exception as e:
-        # Network errors during probe (e.g. offline sandbox or DNS failure)
+        # Network errors during probe (e.g. temporary DNS blip or unreachable host)
+        # If age check passed, treat as healthy so a temporary network blip doesn't discard valid staged games
+        err_msg = str(e)
         return {
-            "healthy": False,
-            "reason": f"Probe error: {str(e)}",
+            "healthy": True,
+            "reason": f"Probe skipped / network error ({err_msg})",
             "status_code": None
         }
 

@@ -284,10 +284,8 @@ def main():
             error_details = result.stderr.strip() if result.stderr else result.stdout.strip()
             raise RuntimeError(f"Table creation failed. setup_poker_auth.py exited with code {result.returncode}.\n\nSubprocess Output:\n{error_details}")
     else:
-        # No additional args; tables already created in the loop above.
-        import time
-        start_time = time.time()
-        print("Skipping final setup_poker_auth.py call because tables were already created.")
+        # Tables were pre-staged and loaded from stage_manager.
+        print("Skipping setup_poker_auth.py call because tables were already pre-staged.")
 
     # Read the created games JSON
     import errno
@@ -295,9 +293,10 @@ def main():
     for attempt in range(10):
         try:
             if os.path.exists("last_created_games.json"):
-                mtime = os.path.getmtime("last_created_games.json")
-                if mtime < start_time:
-                    raise RuntimeError("setup_poker_auth.py exited cleanly but did not create new tables (last_created_games.json is stale).")
+                if args:
+                    mtime = os.path.getmtime("last_created_games.json")
+                    if mtime < start_time:
+                        raise RuntimeError("setup_poker_auth.py exited cleanly but did not create new tables (last_created_games.json is stale).")
                 with open("last_created_games.json", "r") as f:
                     game_data = f.read()
                 break
