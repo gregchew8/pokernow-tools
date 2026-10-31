@@ -1006,6 +1006,32 @@ class LocalAgentHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "result": res}).encode("utf-8"))
 
+        elif path == "/api/announce-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            draft_flag = False
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                    draft_flag = payload.get("draft", False)
+                except Exception as e:
+                    print(f"[Agent] Error parsing announce-staged payload: {e}")
+            if date_str:
+                cmd = [sys.executable, "announce_games.py", "--date", date_str, "--force"]
+                if draft_flag:
+                    cmd += ["--draft"]
+                success = run_script_in_background("announcer", cmd)
+                if success and admin_email:
+                    log_admin_activity(admin_email, "Sent Staged Announcement Early", f"date={date_str}", admin_ip)
+            else:
+                success = False
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
+
         elif path == "/api/approve-email":
             task_type = "announcer"
             pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")

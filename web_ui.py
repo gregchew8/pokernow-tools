@@ -925,6 +925,29 @@ class WebUIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "result": res}).encode("utf-8"))
+        elif self.path == "/api/announce-staged":
+            content_length = int(self.headers.get('Content-Length', 0))
+            date_str = ""
+            draft_flag = False
+            if content_length > 0:
+                try:
+                    post_data = self.rfile.read(content_length)
+                    payload = json.loads(post_data.decode("utf-8"))
+                    date_str = payload.get("date", "")
+                    draft_flag = payload.get("draft", False)
+                except Exception as e:
+                    print(f"[WebUI] Error parsing announce-staged payload: {e}")
+            if date_str:
+                cmd = [sys.executable, "announce_games.py", "--date", date_str, "--force"]
+                if draft_flag:
+                    cmd += ["--draft"]
+                success = run_script_in_background("announcer", cmd)
+            else:
+                success = False
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success}).encode("utf-8"))
         elif self.path == "/api/approve-email":
             task_type = "announcer"
             pending_email_path = os.path.join(WORKING_DIR, "pending_email.json")
@@ -3968,10 +3991,23 @@ class WebUIHandler(BaseHTTPRequestHandler):
 
                         header.appendChild(titleWrap);
 
-                        // Action buttons: Regenerate & Purge
+                        // Action buttons: Send Email Now, Regenerate & Purge
                         const btnGroup = document.createElement('div');
                         btnGroup.style.display = 'flex';
                         btnGroup.style.gap = '0.4rem';
+
+                        const btnAnnounce = document.createElement('button');
+                        btnAnnounce.className = 'btn';
+                        btnAnnounce.style.width = 'auto';
+                        btnAnnounce.style.margin = '0';
+                        btnAnnounce.style.padding = '0.3rem 0.7rem';
+                        btnAnnounce.style.fontSize = '0.75rem';
+                        btnAnnounce.style.background = 'rgba(16, 185, 129, 0.2)';
+                        btnAnnounce.style.border = '1px solid rgba(16, 185, 129, 0.5)';
+                        btnAnnounce.style.color = '#6ee7b7';
+                        btnAnnounce.textContent = '📧 Send Email Now';
+                        btnAnnounce.title = 'Send announcement email & calendar invite to players right now';
+                        btnAnnounce.onclick = () => announceStagedDay(day.date, day.day);
 
                         const btnRegen = document.createElement('button');
                         btnRegen.className = 'btn';
@@ -3997,6 +4033,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         btnPurge.textContent = '🗑️ Purge';
                         btnPurge.onclick = () => purgeStagedDay(day.date, day.day);
 
+                        btnGroup.appendChild(btnAnnounce);
                         btnGroup.appendChild(btnRegen);
                         btnGroup.appendChild(btnPurge);
                         header.appendChild(btnGroup);
@@ -4152,6 +4189,26 @@ class WebUIHandler(BaseHTTPRequestHandler):
                 }
             })
             .catch(err => alert("Error regenerating: " + err));
+        }
+
+        function announceStagedDay(dateStr, dayName) {
+            if (!confirm(`Send announcement email and table links to players now for ${dayName ? dayName.toUpperCase() + ' ' : ''}(${dateStr})?\n\nThis will dispatch the email and calendar invite immediately.`)) {
+                return;
+            }
+            fetch('/api/announce-staged', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: dateStr })
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert(`Announcement triggered for ${dateStr}! The email and calendar invite are being dispatched.`);
+                    updateDashboard();
+                } else {
+                    alert("Failed to trigger announcement. Check server logs.");
+                }
+            })
+            .catch(err => alert("Error dispatching announcement: " + err));
         }
 
         function restartServer() {
@@ -4393,7 +4450,7 @@ class WebUIHandler(BaseHTTPRequestHandler):
                         timesDiv.style.cssText = 'display:' + (isEnabled ? 'flex' : 'none') + '; gap:1rem; margin:0.6rem 0 0.5rem; flex-wrap:wrap; align-items:center;';
                         timesDiv.innerHTML = `
                             <div style="display:flex;align-items:center;gap:0.4rem;flex:1;min-width:160px;">
-                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">🎮 Setup @</label>
+                                <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">📧 Email & Setup @</label>
                                 <input type="time" id="setup-time-${day}" value="${setupTime}"
                                     style="background:rgba(0,0,0,0.3);color:#fff;border:1px solid var(--border-color);padding:0.3rem 0.5rem;border-radius:4px;font-family:monospace;font-size:0.85rem;width:110px;">
                             </div>

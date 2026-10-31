@@ -118,6 +118,17 @@ def main():
     args = [a for a in args if a not in ("--test", "--draft", "--scheduled", "--force")]
     
     target_day = None
+    target_date_param = None
+    if "--date" in args:
+        try:
+            idx = args.index("--date")
+            target_date_param = args[idx + 1].strip()
+            args.pop(idx + 1)
+            args.pop(idx)
+        except IndexError:
+            print("Error: --date requires a value (YYYY-MM-DD).")
+            sys.exit(1)
+            
     if "--day" in args:
         try:
             idx = args.index("--day")
@@ -132,7 +143,14 @@ def main():
     local_now = datetime.datetime.utcnow() - datetime.timedelta(hours=7)
     target_date = local_now
     
-    if target_day:
+    if target_date_param:
+        try:
+            target_date = datetime.datetime.strptime(target_date_param, "%Y-%m-%d")
+            day_name = target_date.strftime("%A").lower()
+        except ValueError:
+            print(f"Error: Invalid --date format '{target_date_param}'. Expected YYYY-MM-DD.")
+            sys.exit(1)
+    elif target_day:
         if target_day == "tomorrow":
             target_date = local_now + datetime.timedelta(days=1)
             day_name = target_date.strftime("%A").lower()
